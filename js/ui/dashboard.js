@@ -4,6 +4,7 @@ import { currentNetCapital, monthsRemaining, computeNetMonthlySavings } from "..
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart } from "./charts.js";
 import { TRACK_STATUS } from "../config/constants.js";
+import { escapeHtml } from "../utils/escape-html.js";
 
 export function renderDashboard(container) {
   const state = getState();
@@ -37,7 +38,7 @@ export function renderDashboard(container) {
 
   container.innerHTML = `
     <div class="card">
-      <h2>${goal.title}</h2>
+      <h2>${escapeHtml(goal.title)}</h2>
       <div style="background:var(--border); border-radius:6px; overflow:hidden; height:20px;">
         <div style="width:${progressPct.toFixed(1)}%; background:var(--primary); height:100%;"></div>
       </div>

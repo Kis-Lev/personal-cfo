@@ -7,6 +7,7 @@ import { renderDashboard } from "./ui/dashboard.js";
 import { renderImportHub } from "./ui/import-hub.js";
 import { renderFixedManager } from "./ui/fixed-manager.js";
 import { renderSimulator } from "./ui/simulator.js";
+import { escapeHtml } from "./utils/escape-html.js";
 
 const appRoot = document.getElementById("app-root");
 const mainNav = document.getElementById("main-nav");
@@ -30,22 +31,32 @@ function renderLoginScreen() {
       <button id="login-btn" class="primary">התחברות עם Google</button>
     </div>
   `;
-  document.getElementById("login-btn").addEventListener("click", handleLogin);
+  document.getElementById("login-btn").addEventListener("click", () => handleLogin({ silent: false }));
 }
 
-async function handleLogin() {
+// Shared by both the silent auto-login attempt and the explicit "Sign in" click,
+// so there is exactly one place that turns an access token into a loaded app.
+async function completeLogin(accessToken) {
+  const { rootFolderId, importsFolderId } = await ensureAppFolders(accessToken);
+  setDriveContext({ rootFolderId, importsFolderId });
+
+  const rawDb = await readDb(accessToken, rootFolderId);
+  initStore(validateAndNormalize(rawDb || emptyDatabase()));
+
+  mainNav.hidden = false;
+  navigate(location.hash.replace("#", "") || "dashboard");
+}
+
+async function handleLogin({ silent }) {
   try {
-    const accessToken = await requestAccessToken();
-    const { rootFolderId, importsFolderId } = await ensureAppFolders(accessToken);
-    setDriveContext({ rootFolderId, importsFolderId });
-
-    const rawDb = await readDb(accessToken, rootFolderId);
-    initStore(validateAndNormalize(rawDb || emptyDatabase()));
-
-    mainNav.hidden = false;
-    navigate(location.hash.replace("#", "") || "dashboard");
+    const accessToken = await requestAccessToken({ silent });
+    await completeLogin(accessToken);
   } catch (err) {
-    appRoot.innerHTML = `<div class="card"><p>שגיאת התחברות: ${err.message}</p></div>`;
+    if (silent) {
+      renderLoginScreen(); // no active Google session to reuse — ask the user to click
+      return;
+    }
+    appRoot.innerHTML = `<div class="card"><p>שגיאת התחברות: ${escapeHtml(err.message)}</p></div>`;
     console.error(err);
   }
 }
@@ -60,4 +71,4 @@ document.getElementById("sign-out-btn").addEventListener("click", () => {
   renderLoginScreen();
 });
 
-renderLoginScreen();
+handleLogin({ silent: true });

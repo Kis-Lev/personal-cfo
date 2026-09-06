@@ -1,4 +1,5 @@
 import { getState, setState } from "../state/store.js";
+import { escapeHtml } from "../utils/escape-html.js";
 import { parseCsv } from "../import/csv-parser.js";
 import { parseXlsx } from "../import/xlsx-parser.js";
 import { normalizeRows } from "../import/tabular-parser.js";
@@ -79,7 +80,7 @@ function renderPendingQueue(listEl) {
     .map(
       (tx, i) => `
       <div class="card pending-card" data-index="${i}">
-        <p>${tx.date} · ${tx.merchant} · ${formatCurrency(tx.amount)}</p>
+        <p>${escapeHtml(tx.date)} · ${escapeHtml(tx.merchant)} · ${formatCurrency(tx.amount)}</p>
         <select class="category-select" tabindex="0"></select>
         <select class="subcategory-select" tabindex="0"></select>
         <button class="primary confirm-btn" tabindex="0">אשר (Enter)</button>
