@@ -11,20 +11,22 @@
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-  <header id="app-header">
-    <h1>Personal CFO</h1>
-    <nav id="main-nav" hidden>
-      <button data-route="dashboard">דשבורד</button>
-      <button data-route="import">ייבוא וסיווג</button>
-      <button data-route="manager">קבועות, הלוואות ופיקדונות</button>
-      <button data-route="simulator">סימולטור יעדים</button>
-      <button id="sign-out-btn">התנתקות</button>
-    </nav>
-  </header>
+  <div class="app-shell">
+    <aside id="sidebar">
+      <div class="sidebar-brand">Personal CFO</div>
+      <nav id="main-nav" hidden>
+        <button data-route="dashboard"><span class="nav-icon">📊</span>דשבורד</button>
+        <button data-route="import"><span class="nav-icon">📥</span>ייבוא וסיווג</button>
+        <button data-route="manager"><span class="nav-icon">💰</span>קבועות, הלוואות ופיקדונות</button>
+        <button data-route="simulator"><span class="nav-icon">🎯</span>סימולטור יעדים</button>
+        <button id="sign-out-btn"><span class="nav-icon">🚪</span>התנתקות</button>
+      </nav>
+    </aside>
 
-  <main id="app-root">
-    <p>טוען...</p>
-  </main>
+    <main id="app-root">
+      <p>טוען...</p>
+    </main>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>
