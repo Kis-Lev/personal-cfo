@@ -20,8 +20,10 @@ let taxonomyCache = null;
 let selectedPresetId = null;
 
 async function readFileAsRows(file) {
-  const isXlsx = /\.xlsx$/i.test(file.name);
-  if (isXlsx) {
+  // .xlsm (macro-enabled Excel) is the same ZIP+XML container as .xlsx —
+  // the parser needs no changes, only recognizing the extension here.
+  const isExcelBinary = /\.xlsm$|\.xlsx$/i.test(file.name);
+  if (isExcelBinary) {
     return parseXlsx(await file.arrayBuffer());
   }
   return parseCsv(await file.text());
@@ -130,8 +132,8 @@ export async function renderImportHub(container) {
           ${presets.map((p) => `<option value="${p.id}">${p.display_name}</option>`).join("")}
         </select>
       </label>
-      <div class="dropzone" id="dropzone">גררי לכאן קובץ CSV/XLSX, או לחצי לבחירה</div>
-      <input type="file" id="file-input" accept=".csv,.xlsx" hidden />
+      <div class="dropzone" id="dropzone">גררי לכאן קובץ CSV/XLSX/XLSM, או לחצי לבחירה</div>
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xlsm" hidden />
       <p id="import-summary"></p>
     </div>
     <div class="card">
