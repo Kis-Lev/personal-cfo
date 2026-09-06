@@ -11,6 +11,10 @@ export const CONFIG_FILE_NAME = "config.json";
 export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const DRIVE_API_BASE = "https://www.googleapis.com/drive/v3";
 export const DRIVE_UPLOAD_API_BASE = "https://www.googleapis.com/upload/drive/v3";
+// A silent (no-popup) re-auth attempt that goes unanswered (e.g. an invisible
+// popup blocked by the browser) never rejects on its own — cap how long we wait
+// before falling back to the interactive "Sign in" button.
+export const SILENT_LOGIN_TIMEOUT_MS = 4000;
 
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";

@@ -8,6 +8,7 @@ import { renderImportHub } from "./ui/import-hub.js";
 import { renderFixedManager } from "./ui/fixed-manager.js";
 import { renderSimulator } from "./ui/simulator.js";
 import { escapeHtml } from "./utils/escape-html.js";
+import { SILENT_LOGIN_TIMEOUT_MS } from "./config/constants.js";
 
 const appRoot = document.getElementById("app-root");
 const mainNav = document.getElementById("main-nav");
@@ -47,9 +48,18 @@ async function completeLogin(accessToken) {
   navigate(location.hash.replace("#", "") || "dashboard");
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), ms)),
+  ]);
+}
+
 async function handleLogin({ silent }) {
   try {
-    const accessToken = await requestAccessToken({ silent });
+    const accessToken = silent
+      ? await withTimeout(requestAccessToken({ silent }), SILENT_LOGIN_TIMEOUT_MS)
+      : await requestAccessToken({ silent });
     await completeLogin(accessToken);
   } catch (err) {
     if (silent) {

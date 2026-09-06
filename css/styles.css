@@ -16,6 +16,10 @@
 
 * { box-sizing: border-box; }
 
+/* Never let an author rule (e.g. #main-nav { display: flex }) accidentally
+   override the native [hidden] attribute's display:none. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, Arial, sans-serif;
