@@ -1,5 +1,6 @@
 // One generic "list + add-form" table used by every section of fixed-manager.js
 // (fixed rules, deposits, loans) instead of three near-duplicate implementations.
+import { escapeHtml } from "../../utils/escape-html.js";
 
 /**
  * @param {HTMLElement} container
@@ -30,7 +31,7 @@ export function renderEditableTable(container, { title, columns, rows, formField
           .map(
             (row, i) => `
           <tr data-index="${i}">
-            ${columns.map((c) => `<td>${c.format ? c.format(row[c.key], row) : row[c.key] ?? ""}</td>`).join("")}
+            ${columns.map((c) => `<td>${c.format ? c.format(row[c.key], row) : escapeHtml(row[c.key] ?? "")}</td>`).join("")}
             <td>
               ${rowActions.map((a, ai) => `<button type="button" class="row-action-btn" data-action="${ai}">${a.label}</button>`).join("")}
               <button type="button" class="delete-btn">מחק</button>
@@ -40,7 +41,7 @@ export function renderEditableTable(container, { title, columns, rows, formField
           .join("")}
       </tbody>
     </table>
-    <form class="add-form">
+    <form class="add-form form-grid">
       ${formFields.map(fieldHtml).join("")}
       <button type="submit" class="primary">הוסף</button>
     </form>

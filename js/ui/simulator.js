@@ -2,6 +2,7 @@ import { getState, setState } from "../state/store.js";
 import { persistState } from "../storage/persist.js";
 import { createId } from "../utils/ids.js";
 import { formatCurrency } from "../utils/currency.js";
+import { escapeHtml } from "../utils/escape-html.js";
 import { currentNetCapital, monthsRemaining, computeNetMonthlySavings } from "../engine/cashflow.js";
 import {
   requiredMonthlySavings,
@@ -17,7 +18,7 @@ let selectedGoalId = null;
 function renderGoalCreateForm(container, onChange) {
   container.innerHTML = `
     <h3>יעד חדש</h3>
-    <form id="new-goal-form">
+    <form id="new-goal-form" class="form-grid">
       <label>שם היעד <input name="title" required /></label>
       <label>סכום יעד <input name="target_amount" type="number" step="0.01" required /></label>
       <label>הון התחלתי <input name="initial_capital" type="number" step="0.01" required /></label>
@@ -52,7 +53,7 @@ function renderCapitalAdjustmentPanel(container, goal, onChange) {
   container.innerHTML = `
     <h3>עדכון הון התחלתי</h3>
     <p>הון נוכחי: ${formatCurrency(netCapital, state.user_profile.currency)}</p>
-    <form id="capital-adjustment-form">
+    <form id="capital-adjustment-form" class="form-grid">
       <label>הון חדש <input name="new_balance" type="number" step="0.01" value="${netCapital}" required /></label>
       <label>הסבר (חובה) <input name="explanation" required /></label>
       <button type="submit" class="primary">עדכן הון</button>
@@ -83,7 +84,7 @@ function renderWhatIfPanel(container, goal, onChange) {
 
   container.innerHTML = `
     <h3>סימולציית פרמטרים (בזמן אמת)</h3>
-    <form id="whatif-form">
+    <form id="whatif-form" class="form-grid">
       <label>סכום יעד <input name="target_amount" type="number" step="0.01" value="${goal.target_amount}" /></label>
       <label>תאריך יעד <input name="target_date" type="date" value="${goal.target_date}" /></label>
     </form>
@@ -151,7 +152,7 @@ export function renderSimulator(container) {
   const goal = goals.find((g) => g.goal_id === selectedGoalId) || null;
 
   container.innerHTML = `
-    ${goals.length > 0 ? `<div class="card"><label>יעד לסימולציה: <select id="goal-select">${goals.map((g) => `<option value="${g.goal_id}" ${g.goal_id === selectedGoalId ? "selected" : ""}>${g.title}</option>`).join("")}</select></label></div>` : ""}
+    ${goals.length > 0 ? `<div class="card"><label>יעד לסימולציה: <select id="goal-select">${goals.map((g) => `<option value="${g.goal_id}" ${g.goal_id === selectedGoalId ? "selected" : ""}>${escapeHtml(g.title)}</option>`).join("")}</select></label></div>` : ""}
     <div class="card" id="goal-create-section"></div>
     ${goal ? `<div class="card" id="capital-adjustment-section"></div><div class="card" id="whatif-section"></div>` : ""}
   `;

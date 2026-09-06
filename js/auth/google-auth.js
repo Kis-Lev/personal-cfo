@@ -22,8 +22,13 @@ function getTokenClient() {
   return tokenClient;
 }
 
-/** Prompts the user to sign in (if needed) and resolves with a fresh access token. */
-export function requestAccessToken() {
+/**
+ * Requests a fresh access token. With { silent: true }, asks Google to reuse
+ * the browser's existing Google session with no popup/click — this fails fast
+ * (rejects) if there's no active Google session or consent was never granted,
+ * so callers should fall back to an interactive requestAccessToken() call.
+ */
+export function requestAccessToken({ silent = false } = {}) {
   return new Promise((resolve, reject) => {
     const client = getTokenClient();
     client.callback = (response) => {
@@ -34,7 +39,7 @@ export function requestAccessToken() {
       accessToken = response.access_token;
       resolve(accessToken);
     };
-    client.requestAccessToken();
+    client.requestAccessToken(silent ? { prompt: "none" } : {});
   });
 }
 
