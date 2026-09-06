@@ -198,6 +198,21 @@ async function processFile(file, container) {
   await finishImport(candidates, preset.id, file, container);
 }
 
+// Groups pending transactions by merchant so the user classifies each
+// distinct merchant ONCE — not once per transaction. Real transaction
+// history is full of repeat merchants (same supermarket, same gas station),
+// so this is usually a large real reduction in manual work, with no
+// guessing involved: it's the same exact-merchant rule the engine already
+// creates, just applied to every matching row in the current batch at once.
+function groupPendingByMerchant() {
+  const groups = new Map();
+  for (const tx of pendingQueue) {
+    if (!groups.has(tx.merchant)) groups.set(tx.merchant, []);
+    groups.get(tx.merchant).push(tx);
+  }
+  return [...groups.entries()].map(([merchant, transactions]) => ({ merchant, transactions }));
+}
+
 function renderPendingQueue(listEl) {
   if (!listEl) return;
   if (pendingQueue.length === 0) {
@@ -205,17 +220,20 @@ function renderPendingQueue(listEl) {
     return;
   }
 
-  listEl.innerHTML = pendingQueue
-    .map(
-      (tx, i) => `
+  const groups = groupPendingByMerchant();
+  listEl.innerHTML =
+    `<p>${pendingQueue.length} תנועות מ-${groups.length} בתי עסק שונים ממתינות — סווגי כל בית עסק פעם אחת.</p>` +
+    groups
+      .map(
+        (group, i) => `
       <div class="card pending-card" data-index="${i}">
-        <p>${escapeHtml(tx.date)} · ${escapeHtml(tx.merchant)} · ${formatCurrency(tx.amount)}</p>
+        <p>${escapeHtml(group.merchant)} <span style="color:var(--muted)">(${group.transactions.length} תנועות, לדוגמה ${escapeHtml(group.transactions[0].date)} · ${formatCurrency(group.transactions[0].amount)})</span></p>
         <select class="category-select" tabindex="0"></select>
         <select class="subcategory-select" tabindex="0"></select>
-        <button class="primary confirm-btn" tabindex="0">אשר (Enter)</button>
+        <button class="primary confirm-btn" tabindex="0">אשר הכל (Enter)</button>
       </div>`
-    )
-    .join("");
+      )
+      .join("");
 
   listEl.querySelectorAll(".pending-card").forEach((card) => {
     const categorySelect = card.querySelector(".category-select");
@@ -224,18 +242,18 @@ function renderPendingQueue(listEl) {
 
     const confirm = () => {
       const index = Number(card.dataset.index);
-      const tx = pendingQueue[index];
+      const group = groups[index];
       const category = categorySelect.value;
       const subCategory = subCategorySelect.value;
-      const confirmed = { ...tx, category, sub_category: subCategory };
-      const newRule = createRuleFromManualAssignment(tx.merchant, category, subCategory);
+      const confirmedTransactions = group.transactions.map((tx) => ({ ...tx, category, sub_category: subCategory }));
+      const newRule = createRuleFromManualAssignment(group.merchant, category, subCategory);
 
       setState((s) => ({
         ...s,
-        parsed_transactions: [...s.parsed_transactions, confirmed],
+        parsed_transactions: [...s.parsed_transactions, ...confirmedTransactions],
         categorization_rules: [...s.categorization_rules, newRule],
       }));
-      pendingQueue = pendingQueue.filter((_, i) => i !== index);
+      pendingQueue = pendingQueue.filter((tx) => tx.merchant !== group.merchant);
       persistState();
       renderPendingQueue(listEl);
     };

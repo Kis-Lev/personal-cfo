@@ -5,6 +5,13 @@ import { DRIVE_API_BASE, DRIVE_UPLOAD_API_BASE, DRIVE_FOLDER_NAME, DRIVE_IMPORTS
 
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
+// Every save was doing a "search by filename" call before every write, even
+// though the file's id never changes once found — that meant 2 Drive API
+// round-trips per save instead of 1. Cache the id per filename for this
+// session so repeat saves (which happen on almost every user action) skip
+// the redundant search.
+const fileIdCache = new Map();
+
 function authHeaders(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
 }
@@ -55,24 +62,31 @@ export async function ensureAppFolders(accessToken) {
   return { rootFolderId: root.id, importsFolderId: imports.id };
 }
 
-async function readJsonFile(accessToken, folderId, fileName) {
+async function resolveFileId(accessToken, folderId, fileName) {
+  if (fileIdCache.has(fileName)) return fileIdCache.get(fileName);
   const existing = await findChild(accessToken, fileName, folderId, null);
-  if (!existing) return null;
-  const response = await driveFetch(accessToken, `/files/${existing.id}?alt=media`);
+  if (existing) fileIdCache.set(fileName, existing.id);
+  return existing?.id ?? null;
+}
+
+async function readJsonFile(accessToken, folderId, fileName) {
+  const fileId = await resolveFileId(accessToken, folderId, fileName);
+  if (!fileId) return null;
+  const response = await driveFetch(accessToken, `/files/${fileId}?alt=media`);
   return response.json();
 }
 
 async function writeJsonFile(accessToken, folderId, fileName, data) {
-  const existing = await findChild(accessToken, fileName, folderId, null);
+  const fileId = await resolveFileId(accessToken, folderId, fileName);
   const body = JSON.stringify(data, null, 2);
 
-  if (existing) {
-    await fetch(`${DRIVE_UPLOAD_API_BASE}/files/${existing.id}?uploadType=media`, {
+  if (fileId) {
+    await fetch(`${DRIVE_UPLOAD_API_BASE}/files/${fileId}?uploadType=media`, {
       method: "PATCH",
       headers: { ...authHeaders(accessToken), "Content-Type": "application/json" },
       body,
     });
-    return existing.id;
+    return fileId;
   }
 
   const boundary = "cfo_app_boundary";
@@ -86,7 +100,9 @@ async function writeJsonFile(accessToken, folderId, fileName, data) {
     headers: { ...authHeaders(accessToken), "Content-Type": `multipart/related; boundary=${boundary}` },
     body: multipartBody,
   });
-  return (await response.json()).id;
+  const newId = (await response.json()).id;
+  fileIdCache.set(fileName, newId);
+  return newId;
 }
 
 export function readDb(accessToken, rootFolderId) {
