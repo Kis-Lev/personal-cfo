@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Personal CFO</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- The only third-party script in the app: Google's own officially-maintained
+       Identity Services library, used solely for the OAuth login flow. -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <header id="app-header">
+    <h1>Personal CFO</h1>
+    <nav id="main-nav" hidden>
+      <button data-route="dashboard">דשבורד</button>
+      <button data-route="import">ייבוא וסיווג</button>
+      <button data-route="manager">קבועות, הלוואות ופיקדונות</button>
+      <button data-route="simulator">סימולטור יעדים</button>
+      <button id="sign-out-btn">התנתקות</button>
+    </nav>
+  </header>
+
+  <main id="app-root">
+    <p>טוען...</p>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

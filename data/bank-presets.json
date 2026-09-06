@@ -1,0 +1,13 @@
+[
+  {
+    "id": "generic",
+    "display_name": "פורמט גנרי (עמודות: תאריך, בית עסק, סכום)",
+    "header_row_index": 0,
+    "columns": {
+      "date": { "header": "תאריך" },
+      "merchant": { "header": "בית עסק" },
+      "amount": { "header": "סכום" },
+      "account_id": { "header": "מזהה חשבון/כרטיס" }
+    }
+  }
+]
