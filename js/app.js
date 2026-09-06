@@ -22,6 +22,9 @@ const routes = {
 
 function navigate(route) {
   location.hash = route;
+  mainNav.querySelectorAll("button[data-route]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.route === route);
+  });
   routes[route]?.(appRoot);
 }
 
