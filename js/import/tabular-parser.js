@@ -5,6 +5,8 @@
 import { normalizeDateToIso } from "../utils/dates.js";
 import { parseAmount } from "../utils/currency.js";
 
+const REQUIRED_COLUMN_KEYS = ["date", "merchant", "amount"];
+
 function buildColumnIndexMap(headerRow, presetColumns) {
   const normalizedHeaders = headerRow.map((h) => String(h).trim());
   const indexMap = {};
@@ -13,6 +15,25 @@ function buildColumnIndexMap(headerRow, presetColumns) {
     indexMap[key] = idx === -1 ? null : idx;
   }
   return indexMap;
+}
+
+/**
+ * Finds the first known preset (built-in or user-taught) whose expected header
+ * texts actually appear in this file's header row — so the file's own content
+ * decides the format instead of the user picking one from a list every time.
+ * @param {string[][]} rows
+ * @param {object[]} presets
+ * @returns {object|null} the matching preset, or null if none of them fit
+ */
+export function detectMatchingPreset(rows, presets) {
+  for (const preset of presets) {
+    const headerRow = rows[preset.header_row_index] || [];
+    const columnIndex = buildColumnIndexMap(headerRow, preset.columns);
+    if (REQUIRED_COLUMN_KEYS.every((key) => columnIndex[key] != null)) {
+      return preset;
+    }
+  }
+  return null;
 }
 
 /**
