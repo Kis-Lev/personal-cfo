@@ -19,6 +19,10 @@ export function emptyDatabase() {
     // Not part of the original PRD sample schema: required to back the Rules
     // Engine categorization approach (user-defined merchant match rules).
     categorization_rules: [],
+    // User-defined column mappings for import file formats that don't match
+    // any built-in preset — every bank/card issuer exports differently, so
+    // these are taught once (via the manual mapping screen) and reused.
+    import_presets: [],
   };
 }
 
@@ -42,5 +46,6 @@ export function validateAndNormalize(rawData) {
     fixed_rules: asArray(data.fixed_rules),
     parsed_transactions: asArray(data.parsed_transactions),
     categorization_rules: asArray(data.categorization_rules),
+    import_presets: asArray(data.import_presets),
   };
 }
