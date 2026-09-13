@@ -51,7 +51,10 @@ export async function renderTransactions(container) {
 
   container.innerHTML = `
     <div class="card">
-      <h2>כל התנועות (${transactions.length})</h2>
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <h2>כל התנועות (${transactions.length})</h2>
+        ${transactions.length > 0 ? `<button type="button" id="reset-all-btn" class="delete-btn">אפס את כל התנועות</button>` : ""}
+      </div>
       ${
         transactions.length === 0
           ? "<p>עדיין אין תנועות מיובאות.</p>"
@@ -66,6 +69,16 @@ export async function renderTransactions(container) {
   `;
 
   if (transactions.length === 0) return;
+
+  container.querySelector("#reset-all-btn").addEventListener("click", () => {
+    const confirmed = confirm(
+      `למחוק את כל ${transactions.length} התנועות המיובאות? זו פעולה בלתי הפיכה. הקבועות/הלוואות/פיקדונות וכללי הסיווג שלמדת יישארו.`
+    );
+    if (!confirmed) return;
+    setState((s) => ({ ...s, parsed_transactions: [] }));
+    persistState();
+    renderTransactions(container);
+  });
 
   container.querySelectorAll("tr[data-tx-id]").forEach((row) => {
     const txId = row.dataset.txId;
