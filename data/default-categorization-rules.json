@@ -94,5 +94,19 @@
   { "match_type": "REGEX", "pattern": "TIM HORTONS", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "PLAYSTATION", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bLODGE\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
-  { "match_type": "REGEX", "pattern": "\\bLODGING\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" }
+  { "match_type": "REGEX", "pattern": "\\bLODGING\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+
+  { "match_type": "REGEX", "pattern": "STARBUCKS", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "קפה", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bCAFE\\b", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "חניון", "category": "רכב ותחבורה", "sub_category": "חניה", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "וואש", "category": "רכב ותחבורה", "sub_category": "טיפולים תקופתיים", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "BREWING", "category": "מסעדות וברים", "sub_category": "ברים ופאבים", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "DELTA FUELS", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "^UNITED\\d", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "RENT-A-CAR", "category": "רכב ותחבורה", "sub_category": "השכרת רכב", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bAVIS\\b", "category": "רכב ותחבורה", "sub_category": "השכרת רכב", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bHERTZ\\b", "category": "רכב ותחבורה", "sub_category": "השכרת רכב", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "RENTALCARS", "category": "רכב ותחבורה", "sub_category": "השכרת רכב", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bMARKET\\b", "category": "מזון וצריכה שוטפת", "sub_category": "שווקים", "confidence": "suggested" }
 ]
