@@ -8,9 +8,31 @@ import { createRuleFromManualAssignment } from "../import/categorizer.js";
 
 let taxonomyCache = null;
 let editingTxId = null;
+let filterState = { category: "", search: "", dateFrom: "", dateTo: "" };
+let sortState = { field: "date", direction: "desc" };
 
-function sortedTransactions(state) {
-  return [...state.parsed_transactions].sort((a, b) => b.date.localeCompare(a.date));
+function filteredSortedTransactions(state) {
+  let rows = state.parsed_transactions;
+  if (filterState.category) rows = rows.filter((tx) => tx.category === filterState.category);
+  if (filterState.search) {
+    const query = filterState.search.toLowerCase();
+    rows = rows.filter((tx) => tx.merchant.toLowerCase().includes(query));
+  }
+  if (filterState.dateFrom) rows = rows.filter((tx) => tx.date >= filterState.dateFrom);
+  if (filterState.dateTo) rows = rows.filter((tx) => tx.date <= filterState.dateTo);
+
+  const { field, direction } = sortState;
+  const sign = direction === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    if (field === "amount") return (a.amount - b.amount) * sign;
+    return String(a[field]).localeCompare(String(b[field])) * sign;
+  });
+}
+
+function sortableHeader(field, label) {
+  const isActive = sortState.field === field;
+  const arrow = isActive ? (sortState.direction === "asc" ? " ▲" : " ▼") : "";
+  return `<th><button type="button" class="sort-header" data-field="${field}" style="background:none; border:none; cursor:pointer; font:inherit; font-weight:bold; padding:0;">${label}${arrow}</button></th>`;
 }
 
 function renderRow(tx) {
@@ -84,40 +106,95 @@ function renderBulkRuleImport(container) {
 export async function renderTransactions(container) {
   taxonomyCache = taxonomyCache || (await loadTaxonomy());
   const state = getState();
-  const transactions = sortedTransactions(state);
+  const allCount = state.parsed_transactions.length;
+  const transactions = filteredSortedTransactions(state);
+  const isFiltered = transactions.length !== allCount;
+
+  const categoryOptions = taxonomyCache
+    .map((c) => `<option value="${escapeHtml(c.category)}" ${filterState.category === c.category ? "selected" : ""}>${c.icon} ${escapeHtml(c.category)}</option>`)
+    .join("");
 
   container.innerHTML = `
     <div class="card" id="bulk-rule-import"></div>
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between;">
-        <h2>כל התנועות (${transactions.length})</h2>
-        ${transactions.length > 0 ? `<button type="button" id="reset-all-btn" class="delete-btn">אפס את כל התנועות</button>` : ""}
+        <h2>כל התנועות (${isFiltered ? `${transactions.length} מתוך ${allCount}` : allCount})</h2>
+        ${allCount > 0 ? `<button type="button" id="reset-all-btn" class="delete-btn">אפס את כל התנועות</button>` : ""}
+      </div>
+      ${
+        allCount === 0
+          ? "<p>עדיין אין תנועות מיובאות.</p>"
+          : `<div class="form-grid" style="margin-bottom:12px;">
+        <label>סינון לפי קטגוריה
+          <select id="filter-category"><option value="">כל הקטגוריות</option>${categoryOptions}</select>
+        </label>
+        <label>חיפוש בית עסק
+          <input id="filter-search" type="text" value="${escapeHtml(filterState.search)}" placeholder="לדוגמה: וולט" />
+        </label>
+        <label>מתאריך
+          <input id="filter-date-from" type="date" value="${filterState.dateFrom}" />
+        </label>
+        <label>עד תאריך
+          <input id="filter-date-to" type="date" value="${filterState.dateTo}" />
+        </label>
+        <button type="button" id="clear-filters-btn">נקה סינון</button>
       </div>
       ${
         transactions.length === 0
-          ? "<p>עדיין אין תנועות מיובאות.</p>"
+          ? "<p>אין תנועות התואמות את הסינון הנוכחי.</p>"
           : `<table>
         <thead>
-          <tr><th>תאריך</th><th>בית עסק</th><th>סכום</th><th>קטגוריה</th><th>תת-קטגוריה</th><th>קובץ מקור</th><th></th></tr>
+          <tr>${sortableHeader("date", "תאריך")}${sortableHeader("merchant", "בית עסק")}${sortableHeader("amount", "סכום")}${sortableHeader("category", "קטגוריה")}${sortableHeader("sub_category", "תת-קטגוריה")}<th>קובץ מקור</th><th></th></tr>
         </thead>
         <tbody>${transactions.map(renderRow).join("")}</tbody>
       </table>`
+      }`
       }
     </div>
   `;
 
   renderBulkRuleImport(container);
 
-  if (transactions.length === 0) return;
+  if (allCount === 0) return;
 
   container.querySelector("#reset-all-btn").addEventListener("click", () => {
     const confirmed = confirm(
-      `למחוק את כל ${transactions.length} התנועות המיובאות? זו פעולה בלתי הפיכה. הקבועות/הלוואות/פיקדונות וכללי הסיווג שלמדת יישארו.`
+      `למחוק את כל ${allCount} התנועות המיובאות? זו פעולה בלתי הפיכה. הקבועות/הלוואות/פיקדונות וכללי הסיווג שלמדת יישארו.`
     );
     if (!confirmed) return;
     setState((s) => ({ ...s, parsed_transactions: [] }));
     persistState();
     renderTransactions(container);
+  });
+
+  container.querySelector("#filter-category").addEventListener("change", (e) => {
+    filterState.category = e.target.value;
+    renderTransactions(container);
+  });
+  container.querySelector("#filter-search").addEventListener("input", (e) => {
+    filterState.search = e.target.value;
+    renderTransactions(container);
+  });
+  container.querySelector("#filter-date-from").addEventListener("change", (e) => {
+    filterState.dateFrom = e.target.value;
+    renderTransactions(container);
+  });
+  container.querySelector("#filter-date-to").addEventListener("change", (e) => {
+    filterState.dateTo = e.target.value;
+    renderTransactions(container);
+  });
+  container.querySelector("#clear-filters-btn").addEventListener("click", () => {
+    filterState = { category: "", search: "", dateFrom: "", dateTo: "" };
+    renderTransactions(container);
+  });
+
+  container.querySelectorAll(".sort-header").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const field = btn.dataset.field;
+      sortState =
+        sortState.field === field ? { field, direction: sortState.direction === "asc" ? "desc" : "asc" } : { field, direction: "asc" };
+      renderTransactions(container);
+    });
   });
 
   container.querySelectorAll("tr[data-tx-id]").forEach((row) => {
