@@ -6,6 +6,7 @@ import { normalizeRows, detectMatchingPreset } from "../import/tabular-parser.js
 import { loadBankPresets } from "../import/bank-presets.js";
 import { filterNewTransactions } from "../import/dedup.js";
 import { categorizeTransaction, createRuleFromManualAssignment } from "../import/categorizer.js";
+import { loadDefaultCategorizationRules } from "../import/default-categorization-rules.js";
 import { loadTaxonomy } from "../utils/taxonomy.js";
 import { wireCategoryCascade } from "./components/category-cascade.js";
 import { formatCurrency } from "../utils/currency.js";
@@ -23,6 +24,14 @@ let pendingQueue = []; // transactions awaiting manual classification (not yet i
 let taxonomyCache = null;
 let selectedPresetId = null;
 let builtInPresetsCache = [];
+let defaultCategorizationRulesCache = [];
+
+// The user's own learned rules (from manually classifying a merchant before)
+// always take priority over the built-in keyword defaults — hers are a
+// deliberate, specific correction; the defaults are just a generic fallback.
+function allCategorizationRules() {
+  return [...getState().categorization_rules, ...defaultCategorizationRulesCache];
+}
 
 async function readFileAsRows(file) {
   // .xlsm (macro-enabled Excel) is the same ZIP+XML container as .xlsx —
@@ -47,8 +56,9 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
   const deduped = await filterNewTransactions(candidates, state.parsed_transactions);
 
   const autoCategorized = [];
+  let suggestedCount = 0;
   for (const candidate of deduped) {
-    const { category, sub_category } = categorizeTransaction(candidate, state.categorization_rules);
+    const { category, sub_category, needsConfirmation } = categorizeTransaction(candidate, allCategorizationRules());
     const transaction = {
       tx_id: candidate.tx_id,
       date: candidate.date,
@@ -60,6 +70,12 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
     };
     if (category === PENDING_CATEGORY_LABEL) {
       pendingQueue.push(transaction);
+    } else if (needsConfirmation) {
+      // A keyword-based guess, not a rule the user actually taught — never
+      // applied silently. Goes to the same review queue, pre-filled with the
+      // suggestion so confirming it is a single click, but she still sees it.
+      pendingQueue.push({ ...transaction, suggested: true });
+      suggestedCount++;
     } else {
       autoCategorized.push(transaction);
     }
@@ -71,8 +87,9 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
 
   renderPendingQueue(container.querySelector("#pending-queue"));
   const detectionNote = detectedLabel ? `זוהה פורמט: ${detectedLabel}. ` : "";
+  const unclassifiedCount = deduped.length - autoCategorized.length - suggestedCount;
   container.querySelector("#import-summary").textContent =
-    `${detectionNote}יובאו ${autoCategorized.length} תנועות באופן אוטומטי, ${deduped.length - autoCategorized.length} ממתינות לסיווג, ${candidates.length - deduped.length} כפילויות נחסמו.`;
+    `${detectionNote}יובאו ${autoCategorized.length} תנועות באופן אוטומטי, ${suggestedCount} עם הצעת סיווג לאישור, ${unclassifiedCount} ללא סיווג, ${candidates.length - deduped.length} כפילויות נחסמו.`;
 
   try {
     const { importsFolderId } = getDriveContext();
@@ -224,28 +241,39 @@ function renderPendingQueue(listEl) {
   listEl.innerHTML =
     `<p>${pendingQueue.length} תנועות מ-${groups.length} בתי עסק שונים ממתינות — סווגי כל בית עסק פעם אחת.</p>` +
     groups
-      .map(
-        (group, i) => `
+      .map((group, i) => {
+        const suggestion = group.transactions[0].suggested
+          ? `<p class="track-green">💡 הצעה: ${escapeHtml(group.transactions[0].category)} / ${escapeHtml(group.transactions[0].sub_category)} — אשרי אם נכון, או בחרי אחר</p>`
+          : "";
+        return `
       <div class="card pending-card" data-index="${i}">
         <p>${escapeHtml(group.merchant)} <span style="color:var(--muted)">(${group.transactions.length} תנועות, לדוגמה ${escapeHtml(group.transactions[0].date)} · ${formatCurrency(group.transactions[0].amount)})</span></p>
+        ${suggestion}
         <select class="category-select" tabindex="0"></select>
         <select class="subcategory-select" tabindex="0"></select>
         <button class="primary confirm-btn" tabindex="0">אשר הכל (Enter)</button>
-      </div>`
-      )
+      </div>`;
+      })
       .join("");
 
-  listEl.querySelectorAll(".pending-card").forEach((card) => {
+  listEl.querySelectorAll(".pending-card").forEach((card, i) => {
     const categorySelect = card.querySelector(".category-select");
     const subCategorySelect = card.querySelector(".subcategory-select");
     wireCategoryCascade(categorySelect, subCategorySelect, taxonomyCache);
+
+    const suggested = groups[i].transactions[0];
+    if (suggested.suggested) {
+      categorySelect.value = suggested.category;
+      categorySelect.dispatchEvent(new Event("change"));
+      subCategorySelect.value = suggested.sub_category;
+    }
 
     const confirm = () => {
       const index = Number(card.dataset.index);
       const group = groups[index];
       const category = categorySelect.value;
       const subCategory = subCategorySelect.value;
-      const confirmedTransactions = group.transactions.map((tx) => ({ ...tx, category, sub_category: subCategory }));
+      const confirmedTransactions = group.transactions.map(({ suggested, ...tx }) => ({ ...tx, category, sub_category: subCategory }));
       const newRule = createRuleFromManualAssignment(group.merchant, category, subCategory);
 
       setState((s) => ({
@@ -268,6 +296,7 @@ function renderPendingQueue(listEl) {
 export async function renderImportHub(container) {
   const builtInPresets = await loadBankPresets();
   builtInPresetsCache = builtInPresets; // lets allPresets() combine these with saved custom ones
+  defaultCategorizationRulesCache = await loadDefaultCategorizationRules();
   taxonomyCache = taxonomyCache || (await loadTaxonomy());
   selectedPresetId = selectedPresetId || AUTO_DETECT_ID;
 

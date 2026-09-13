@@ -14,13 +14,22 @@ function ruleMatches(rule, merchant) {
   return merchant.toLowerCase().includes(rule.pattern.toLowerCase());
 }
 
-/** Returns {category, sub_category} for the first matching rule, or the pending label. */
+/**
+ * Returns {category, sub_category, needsConfirmation} for the first matching
+ * rule, or the pending label if nothing matches. A rule with
+ * confidence: "suggested" (the built-in keyword defaults, which can
+ * mismatch on unrelated merchant names) is never applied silently — it's
+ * returned with needsConfirmation: true so the caller still asks the user
+ * to confirm before treating it as a real classification. The user's own
+ * learned rules (from a previous manual classification) have no such flag
+ * and are trusted directly.
+ */
 export function categorizeTransaction(transaction, rules) {
   const match = rules.find((rule) => ruleMatches(rule, transaction.merchant));
   if (!match) {
-    return { category: PENDING_CATEGORY_LABEL, sub_category: PENDING_CATEGORY_LABEL };
+    return { category: PENDING_CATEGORY_LABEL, sub_category: PENDING_CATEGORY_LABEL, needsConfirmation: false };
   }
-  return { category: match.category, sub_category: match.sub_category };
+  return { category: match.category, sub_category: match.sub_category, needsConfirmation: match.confidence === "suggested" };
 }
 
 /** Called when the user manually assigns a category — teaches the engine for next time. */
