@@ -9,6 +9,16 @@
   { "match_type": "REGEX", "pattern": "\\bHOTEL\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bSPA\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
 
+  { "match_type": "CONTAINS", "pattern": "מקדונלדס", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "MCDONALD", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "ברגר קינג", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "BURGER\\s?KING", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bKFC\\b", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "פיצה האט", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "PIZZA\\s?HUT", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "דומינוס", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "DOMINO", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
+
   { "match_type": "CONTAINS", "pattern": "מזון", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "סופר", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "שופרסל", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
