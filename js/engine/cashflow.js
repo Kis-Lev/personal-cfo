@@ -53,6 +53,43 @@ export function variableExpenseBreakdownByCategory(transactions) {
 }
 
 /**
+ * A real "average spending per category" report — the thing a spreadsheet
+ * or bank app would show by default, distinct from the WMA-based forward
+ * projection used for goal-feasibility math above. For every category that
+ * appears anywhere (a fixed rule or a transaction), shows the plain
+ * arithmetic monthly average, broken into its fixed and transaction-derived
+ * parts so no number here is a blended black box.
+ * @returns {{ rows: Array<{category, fixedMonthly, avgFromTransactions, monthsWithData, monthlyAverage}>, overallMonthlyAverage: number }}
+ */
+export function categorySpendingSummary(state) {
+  const categories = new Set();
+  state.fixed_rules.filter((r) => r.active && r.type === "EXPENSE").forEach((r) => categories.add(r.category));
+  state.parsed_transactions.forEach((tx) => categories.add(tx.category));
+
+  const rows = [...categories]
+    .map((category) => {
+      const fixedMonthly = sumFixedRulesMonthly(
+        state.fixed_rules.filter((r) => r.category === category),
+        "EXPENSE"
+      );
+      const monthlyTotals = monthlyExpenseSeries(state.parsed_transactions.filter((tx) => tx.category === category));
+      const monthsWithData = monthlyTotals.length;
+      const avgFromTransactions = monthsWithData > 0 ? monthlyTotals.reduce((a, b) => a + b, 0) / monthsWithData : 0;
+      return {
+        category,
+        fixedMonthly,
+        avgFromTransactions,
+        monthsWithData,
+        monthlyAverage: fixedMonthly + avgFromTransactions,
+      };
+    })
+    .sort((a, b) => b.monthlyAverage - a.monthlyAverage);
+
+  const overallMonthlyAverage = rows.reduce((sum, r) => sum + r.monthlyAverage, 0);
+  return { rows, overallMonthlyAverage };
+}
+
+/**
  * Net monthly savings = fixed income
  *   - (fixed expenses from fixed_rules + projected "פיננסים, בריאות וביטוח" spending)
  *   - projected (WMA) variable expenses (everything else).

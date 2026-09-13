@@ -1,5 +1,5 @@
 import { getState } from "../state/store.js";
-import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, variableExpenseBreakdownByCategory } from "../engine/cashflow.js";
+import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary } from "../engine/cashflow.js";
 import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart, renderLegend } from "./charts.js";
@@ -36,15 +36,29 @@ export function renderDashboard(container) {
   const donut = renderChart("donut", cashflowSeries, { width: 220, height: 220 });
   const legend = renderLegend(cashflowSeries, state.user_profile.currency);
 
-  const variableBreakdown = variableExpenseBreakdownByCategory(state.parsed_transactions);
-  const variableBreakdownHtml =
-    variableBreakdown.length === 0
-      ? ""
-      : `<ul style="margin:6px 0 0; padding-inline-start:18px;">
-          ${variableBreakdown
-            .map((b) => `<li>${escapeHtml(b.category)}: ${formatCurrency(b.projected, state.user_profile.currency)}</li>`)
-            .join("")}
-        </ul>`;
+  const { rows: categoryRows, overallMonthlyAverage } = categorySpendingSummary(state);
+  const currency = state.user_profile.currency;
+  const categoryTableHtml =
+    categoryRows.length === 0
+      ? "<p>עדיין אין מספיק נתונים (לא קבועות ולא תנועות מיובאות) לפילוח לפי קטגוריה.</p>"
+      : `<table>
+          <thead>
+            <tr><th>קטגוריה</th><th>קבוע חודשי</th><th>ממוצע מתנועות</th><th>סה"כ ממוצע חודשי</th><th>חודשים עם נתונים</th></tr>
+          </thead>
+          <tbody>
+            ${categoryRows
+              .map(
+                (r) => `<tr>
+                  <td>${escapeHtml(r.category)}</td>
+                  <td>${formatCurrency(r.fixedMonthly, currency)}</td>
+                  <td>${formatCurrency(r.avgFromTransactions, currency)}</td>
+                  <td><strong>${formatCurrency(r.monthlyAverage, currency)}</strong></td>
+                  <td>${r.monthsWithData}</td>
+                </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>`;
 
   container.innerHTML = `
     <div class="card">
@@ -59,17 +73,21 @@ export function renderDashboard(container) {
     <div class="grid-2">
       <div class="card">
         <h3>תמונת תזרים חודשית</h3>
-        <p>הכנסות קבועות: ${formatCurrency(fixedIncome, state.user_profile.currency)}</p>
-        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, state.user_profile.currency)}${projectedFinanceInsurance > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFinanceInsurance, state.user_profile.currency)} פיננסים/ביטוח)</span>` : ""}</p>
-        <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, state.user_profile.currency)}</p>
-        ${variableBreakdownHtml}
-        <p>קצב חיסכון נדרש: ${formatCurrency(required, state.user_profile.currency)}</p>
+        <p>הכנסות קבועות: ${formatCurrency(fixedIncome, currency)}</p>
+        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, currency)}${projectedFinanceInsurance > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFinanceInsurance, currency)} פיננסים/ביטוח)</span>` : ""}</p>
+        <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, currency)}</p>
+        <p>קצב חיסכון נדרש: ${formatCurrency(required, currency)}</p>
       </div>
       <div class="card">
         <h3>פילוח תזרימי</h3>
         ${donut}
         ${legend}
       </div>
+    </div>
+    <div class="card">
+      <h3>ממוצע הוצאה חודשית לפי קטגוריה</h3>
+      <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong></p>
+      ${categoryTableHtml}
     </div>
   `;
 }
