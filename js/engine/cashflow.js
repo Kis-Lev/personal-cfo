@@ -35,6 +35,24 @@ export function monthlyVariableExpenseSeries(transactions) {
 }
 
 /**
+ * Breaks the WMA-projected "variable expense" figure down by category, so the
+ * dashboard never shows a single number with nothing behind it — every
+ * category's own projected contribution is visible and sums back to the total.
+ * @returns {Array<{category:string, projected:number}>} sorted highest-first
+ */
+export function variableExpenseBreakdownByCategory(transactions) {
+  const variableTransactions = transactions.filter((tx) => tx.category !== FIXED_TREATMENT_CATEGORY);
+  const byCategory = new Map();
+  for (const tx of variableTransactions) {
+    if (!byCategory.has(tx.category)) byCategory.set(tx.category, []);
+    byCategory.get(tx.category).push(tx);
+  }
+  return [...byCategory.entries()]
+    .map(([category, txs]) => ({ category, projected: weightedMovingAverage(monthlyExpenseSeries(txs)) }))
+    .sort((a, b) => b.projected - a.projected);
+}
+
+/**
  * Net monthly savings = fixed income
  *   - (fixed expenses from fixed_rules + projected "פיננסים, בריאות וביטוח" spending)
  *   - projected (WMA) variable expenses (everything else).

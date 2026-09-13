@@ -1,8 +1,8 @@
 import { getState } from "../state/store.js";
-import { currentNetCapital, monthsRemaining, computeNetMonthlySavings } from "../engine/cashflow.js";
+import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, variableExpenseBreakdownByCategory } from "../engine/cashflow.js";
 import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
-import { renderChart } from "./charts.js";
+import { renderChart, renderLegend } from "./charts.js";
 import { escapeHtml } from "../utils/escape-html.js";
 
 export function renderDashboard(container) {
@@ -28,15 +28,23 @@ export function renderDashboard(container) {
     state.user_profile.currency
   );
 
-  const donut = renderChart(
-    "donut",
-    [
-      { label: "קבועות", value: fixedExpense },
-      { label: "משתנות", value: projectedVariable },
-      { label: "יתרה לחיסכון", value: Math.max(0, netMonthlySavings) },
-    ],
-    { width: 220, height: 220 }
-  );
+  const cashflowSeries = [
+    { label: "קבועות", value: fixedExpense },
+    { label: "משתנות", value: projectedVariable },
+    { label: "יתרה לחיסכון", value: Math.max(0, netMonthlySavings) },
+  ];
+  const donut = renderChart("donut", cashflowSeries, { width: 220, height: 220 });
+  const legend = renderLegend(cashflowSeries, state.user_profile.currency);
+
+  const variableBreakdown = variableExpenseBreakdownByCategory(state.parsed_transactions);
+  const variableBreakdownHtml =
+    variableBreakdown.length === 0
+      ? ""
+      : `<ul style="margin:6px 0 0; padding-inline-start:18px;">
+          ${variableBreakdown
+            .map((b) => `<li>${escapeHtml(b.category)}: ${formatCurrency(b.projected, state.user_profile.currency)}</li>`)
+            .join("")}
+        </ul>`;
 
   container.innerHTML = `
     <div class="card">
@@ -54,11 +62,13 @@ export function renderDashboard(container) {
         <p>הכנסות קבועות: ${formatCurrency(fixedIncome, state.user_profile.currency)}</p>
         <p>הוצאות קבועות: ${formatCurrency(fixedExpense, state.user_profile.currency)}${projectedFinanceInsurance > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFinanceInsurance, state.user_profile.currency)} פיננסים/ביטוח)</span>` : ""}</p>
         <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, state.user_profile.currency)}</p>
+        ${variableBreakdownHtml}
         <p>קצב חיסכון נדרש: ${formatCurrency(required, state.user_profile.currency)}</p>
       </div>
       <div class="card">
         <h3>פילוח תזרימי</h3>
         ${donut}
+        ${legend}
       </div>
     </div>
   `;

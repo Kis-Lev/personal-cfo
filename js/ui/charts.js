@@ -1,6 +1,9 @@
 // Single hand-rolled SVG chart renderer for the whole app — one function with a
 // `type` switch, instead of three near-duplicate bar/line/donut modules.
-const CHART_COLORS = ["#2b6cb0", "#38a169", "#d69e2e", "#e53e3e", "#805ad5", "#319795"];
+import { escapeHtml } from "../utils/escape-html.js";
+import { formatCurrency } from "../utils/currency.js";
+
+export const CHART_COLORS = ["#2b6cb0", "#38a169", "#d69e2e", "#e53e3e", "#805ad5", "#319795"];
 
 function svgWrap(width, height, inner) {
   return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img">${inner}</svg>`;
@@ -68,4 +71,29 @@ export function renderChart(type, series, options = {}) {
   if (type === "donut") return renderDonut(series, options);
   if (type === "bar" || type === "line") return renderBarOrLine(type, series, options);
   throw new Error(`Unknown chart type: ${type}`);
+}
+
+/**
+ * A chart is never shown without this — a plain list of color swatch + label
+ * + value + percentage, so no chart on its own is a "black box" of colors
+ * with no numbers behind them.
+ * @param {Array<{label:string, value:number}>} series
+ * @param {string} currency
+ */
+export function renderLegend(series, currency) {
+  const total = series.reduce((sum, s) => sum + s.value, 0) || 1;
+  return `
+    <ul style="list-style:none; padding:0; margin:12px 0 0;">
+      ${series
+        .map((s, i) => {
+          const pct = ((s.value / total) * 100).toFixed(1);
+          const color = CHART_COLORS[i % CHART_COLORS.length];
+          return `<li style="display:flex; align-items:center; gap:8px; margin:4px 0;">
+            <span style="width:12px; height:12px; border-radius:3px; background:${color}; flex-shrink:0;"></span>
+            <span>${escapeHtml(s.label)}: ${formatCurrency(s.value, currency)} (${pct}%)</span>
+          </li>`;
+        })
+        .join("")}
+    </ul>
+  `;
 }
