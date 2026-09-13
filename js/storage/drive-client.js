@@ -17,8 +17,12 @@ function authHeaders(accessToken) {
 }
 
 async function driveFetch(accessToken, path, options = {}) {
+  // Financial data must never come from a stale browser HTTP cache — always
+  // hit the network, even for a GET the browser might otherwise think it can
+  // reuse.
   const response = await fetch(`${DRIVE_API_BASE}${path}`, {
     ...options,
+    cache: "no-store",
     headers: { ...authHeaders(accessToken), ...(options.headers || {}) },
   });
   if (!response.ok) {
