@@ -1,11 +1,11 @@
 [
-  { "match_type": "CONTAINS", "pattern": "בר ", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "מסעדה", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "מסעדת", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "בר ", "category": "מסעדות וברים", "sub_category": "ברים ופאבים", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "מסעדה", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "מסעדת", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "מלון", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "ספא", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
-  { "match_type": "REGEX", "pattern": "\\bBAR\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
-  { "match_type": "REGEX", "pattern": "\\bRESTAURANT\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bBAR\\b", "category": "מסעדות וברים", "sub_category": "ברים ופאבים", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bRESTAURANT\\b", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bHOTEL\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bSPA\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
 
