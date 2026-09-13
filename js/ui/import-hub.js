@@ -5,7 +5,7 @@ import { parseXlsx } from "../import/xlsx-parser.js";
 import { normalizeRows, detectMatchingPreset } from "../import/tabular-parser.js";
 import { loadBankPresets } from "../import/bank-presets.js";
 import { filterNewTransactions } from "../import/dedup.js";
-import { categorizeTransaction, createRuleFromManualAssignment } from "../import/categorizer.js";
+import { categorizeTransaction, createRuleFromConfirmation } from "../import/categorizer.js";
 import { loadDefaultCategorizationRules } from "../import/default-categorization-rules.js";
 import { loadTaxonomy } from "../utils/taxonomy.js";
 import { wireCategoryCascade } from "./components/category-cascade.js";
@@ -58,7 +58,7 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
   const autoCategorized = [];
   let suggestedCount = 0;
   for (const candidate of deduped) {
-    const { category, sub_category, needsConfirmation } = categorizeTransaction(candidate, allCategorizationRules());
+    const { category, sub_category, needsConfirmation, matchedRule } = categorizeTransaction(candidate, allCategorizationRules());
     const transaction = {
       tx_id: candidate.tx_id,
       date: candidate.date,
@@ -75,7 +75,9 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
       // A keyword-based guess, not a rule the user actually taught — never
       // applied silently. Goes to the same review queue, pre-filled with the
       // suggestion so confirming it is a single click, but she still sees it.
-      pendingQueue.push({ ...transaction, suggested: true });
+      // Carries matchedRule so confirming promotes that keyword pattern itself
+      // (see groupPendingByRule/confirm below), not just this one row's exact text.
+      pendingQueue.push({ ...transaction, suggested: true, matchedRule });
       suggestedCount++;
     } else {
       autoCategorized.push(transaction);
@@ -216,19 +218,29 @@ async function processFile(file, container) {
   await finishImport(candidates, preset.id, file, container);
 }
 
-// Groups pending transactions by merchant so the user classifies each
-// distinct merchant ONCE — not once per transaction. Real transaction
-// history is full of repeat merchants (same supermarket, same gas station),
-// so this is usually a large real reduction in manual work, with no
-// guessing involved: it's the same exact-merchant rule the engine already
-// creates, just applied to every matching row in the current batch at once.
+// Groups pending transactions so the user classifies each distinct THING
+// ONCE — not once per transaction and not once per merchant-text variant.
+// A row with a pre-filled suggestion (tx.matchedRule) is grouped by that
+// underlying keyword/regex pattern, not by its literal merchant text: real
+// bank/card exports often append a per-row reference number or branch code
+// to an otherwise-repeating merchant name (e.g. "סונול כביש 6 מסוף 00234"),
+// so two rows from the same real merchant can have different exact text
+// while still being caught by the same pattern — grouping by the pattern
+// collapses them into one confirmation instead of many. Rows with no
+// suggestion (nothing matched at all) have no pattern to group by, so they
+// still fall back to grouping by literal merchant text.
+function pendingGroupKey(tx) {
+  return tx.matchedRule ? `rule:${tx.matchedRule.match_type}:${tx.matchedRule.pattern}` : `merchant:${tx.merchant}`;
+}
+
 function groupPendingByMerchant() {
   const groups = new Map();
   for (const tx of pendingQueue) {
-    if (!groups.has(tx.merchant)) groups.set(tx.merchant, []);
-    groups.get(tx.merchant).push(tx);
+    const key = pendingGroupKey(tx);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tx);
   }
-  return [...groups.entries()].map(([merchant, transactions]) => ({ merchant, transactions }));
+  return [...groups.entries()].map(([key, transactions]) => ({ key, transactions }));
 }
 
 function renderPendingQueue(listEl) {
@@ -240,15 +252,21 @@ function renderPendingQueue(listEl) {
 
   const groups = groupPendingByMerchant();
   listEl.innerHTML =
-    `<p>${pendingQueue.length} תנועות מ-${groups.length} בתי עסק שונים ממתינות — סווגי כל בית עסק פעם אחת.</p>` +
+    `<p>${pendingQueue.length} תנועות ב-${groups.length} קבוצות ממתינות — סווגי כל קבוצה פעם אחת.</p>` +
     groups
       .map((group, i) => {
-        const suggestion = group.transactions[0].suggested
-          ? `<p class="track-green">💡 הצעה: ${escapeHtml(group.transactions[0].category)} / ${escapeHtml(group.transactions[0].sub_category)} — אשרי אם נכון, או בחרי אחר</p>`
+        const first = group.transactions[0];
+        const distinctMerchants = new Set(group.transactions.map((tx) => tx.merchant));
+        const suggestion = first.suggested
+          ? `<p class="track-green">💡 הצעה: ${escapeHtml(first.category)} / ${escapeHtml(first.sub_category)} — אשרי אם נכון, או בחרי אחר. אישור כאן ייכנס אוטומטית לתוקף לכל תנועה עתידית מסוג זה, בלי לשאול שוב.</p>`
           : "";
+        const label =
+          distinctMerchants.size > 1
+            ? `${escapeHtml(first.merchant)} <span style="color:var(--muted)">(וכן ${distinctMerchants.size - 1} וריאציות נוספות של אותו בית עסק)</span>`
+            : escapeHtml(first.merchant);
         return `
       <div class="card pending-card" data-index="${i}">
-        <p>${escapeHtml(group.merchant)} <span style="color:var(--muted)">(${group.transactions.length} תנועות, לדוגמה ${escapeHtml(group.transactions[0].date)} · ${formatCurrency(group.transactions[0].amount)})</span></p>
+        <p>${label} <span style="color:var(--muted)">(${group.transactions.length} תנועות, לדוגמה ${escapeHtml(first.date)} · ${formatCurrency(first.amount)})</span></p>
         ${suggestion}
         <select class="category-select" tabindex="0"></select>
         <select class="subcategory-select" tabindex="0"></select>
@@ -274,15 +292,15 @@ function renderPendingQueue(listEl) {
       const group = groups[index];
       const category = categorySelect.value;
       const subCategory = subCategorySelect.value;
-      const confirmedTransactions = group.transactions.map(({ suggested, ...tx }) => ({ ...tx, category, sub_category: subCategory }));
-      const newRule = createRuleFromManualAssignment(group.merchant, category, subCategory);
+      const confirmedTransactions = group.transactions.map(({ suggested, matchedRule, ...tx }) => ({ ...tx, category, sub_category: subCategory }));
+      const newRule = createRuleFromConfirmation(group.transactions[0], category, subCategory);
 
       setState((s) => ({
         ...s,
         parsed_transactions: [...s.parsed_transactions, ...confirmedTransactions],
         categorization_rules: [...s.categorization_rules, newRule],
       }));
-      pendingQueue = pendingQueue.filter((tx) => tx.merchant !== group.merchant);
+      pendingQueue = pendingQueue.filter((tx) => pendingGroupKey(tx) !== group.key);
       persistState();
       renderPendingQueue(listEl);
     };
