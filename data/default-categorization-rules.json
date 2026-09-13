@@ -4,6 +4,10 @@
   { "match_type": "CONTAINS", "pattern": "מסעדת", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "מלון", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "ספא", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bBAR\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bRESTAURANT\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "מסעדות ובתי קפה", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bHOTEL\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bSPA\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
 
   { "match_type": "CONTAINS", "pattern": "מזון", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "סופר", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
@@ -19,5 +23,8 @@
 
   { "match_type": "CONTAINS", "pattern": "דלק", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "פז ", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "סונול", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" }
+  { "match_type": "CONTAINS", "pattern": "סונול", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
+
+  { "match_type": "CONTAINS", "pattern": "BIT", "category": "תשלום באפליקציות", "sub_category": "ביט", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "PAYBOX", "category": "תשלום באפליקציות", "sub_category": "פייבוקס", "confidence": "suggested" }
 ]
