@@ -4,14 +4,7 @@ import { createId } from "../utils/ids.js";
 import { formatCurrency } from "../utils/currency.js";
 import { escapeHtml } from "../utils/escape-html.js";
 import { currentNetCapital, monthsRemaining, computeNetMonthlySavings } from "../engine/cashflow.js";
-import {
-  requiredMonthlySavings,
-  feasibilityGap,
-  suggestExtendedTimeline,
-  suggestVariableCategoryReduction,
-  suggestAdditionalCapital,
-} from "../engine/goals.js";
-import { TRACK_STATUS } from "../config/constants.js";
+import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 
 let selectedGoalId = null;
 
@@ -99,25 +92,13 @@ function renderWhatIfPanel(container, goal, onChange) {
     const targetAmount = Number(form.target_amount.value);
     const targetDate = form.target_date.value;
     const remaining = monthsRemaining(targetDate);
-    const required = requiredMonthlySavings(targetAmount, netCapital, remaining);
-    const { status, gap } = feasibilityGap(netMonthlySavings, required);
-
-    let suggestionsHtml = "";
-    if (status === TRACK_STATUS.RED) {
-      const extendedMonths = suggestExtendedTimeline(targetAmount, netCapital, netMonthlySavings);
-      const reduction = suggestVariableCategoryReduction(netMonthlySavings, required);
-      const additionalCapital = suggestAdditionalCapital(targetAmount, netCapital, remaining, netMonthlySavings);
-      suggestionsHtml = `
-        <p class="track-red">⚠️ מתחת לקצב הנדרש (פער חודשי: ${formatCurrency(gap, state.user_profile.currency)})</p>
-        <ul>
-          <li>הארכת תאריך היעד ל-${Number.isFinite(extendedMonths) ? extendedMonths.toFixed(0) : "∞"} חודשים מהיום</li>
-          <li>הפחתה נדרשת בהוצאות משתנות: ${formatCurrency(reduction, state.user_profile.currency)} לחודש</li>
-          <li>תוספת הון התחלתי נדרשת: ${formatCurrency(additionalCapital, state.user_profile.currency)}</li>
-        </ul>
-      `;
-    } else {
-      suggestionsHtml = `<p class="track-green">✅ במסלול הבטוח (עודף חודשי: ${formatCurrency(gap, state.user_profile.currency)})</p>`;
-    }
+    const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
+      targetAmount,
+      netCapital,
+      remaining,
+      netMonthlySavings,
+      state.user_profile.currency
+    );
 
     resultsEl.innerHTML = `
       <p>קצב חיסכון נדרש: ${formatCurrency(required, state.user_profile.currency)} לחודש</p>

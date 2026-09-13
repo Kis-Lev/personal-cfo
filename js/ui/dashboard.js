@@ -1,9 +1,8 @@
 import { getState } from "../state/store.js";
-import { requiredMonthlySavings, feasibilityGap } from "../engine/goals.js";
 import { currentNetCapital, monthsRemaining, computeNetMonthlySavings } from "../engine/cashflow.js";
+import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart } from "./charts.js";
-import { TRACK_STATUS } from "../config/constants.js";
 import { escapeHtml } from "../utils/escape-html.js";
 
 export function renderDashboard(container) {
@@ -18,13 +17,16 @@ export function renderDashboard(container) {
   const netCapital = currentNetCapital(goal, state.capital_adjustments_log);
   const progressPct = Math.min(100, (netCapital / goal.target_amount) * 100);
   const remaining = monthsRemaining(goal.target_date);
-  const required = requiredMonthlySavings(goal.target_amount, netCapital, remaining);
 
   const { fixedIncome, fixedExpense, projectedFinanceInsurance, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
 
-  const { status, gap } = feasibilityGap(netMonthlySavings, required);
-  const trackClass = status === TRACK_STATUS.GREEN ? "track-green" : "track-red";
-  const trackLabel = status === TRACK_STATUS.GREEN ? "✅ במסלול הבטוח" : "⚠️ מתחת לקצב הנדרש";
+  const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
+    goal.target_amount,
+    netCapital,
+    remaining,
+    netMonthlySavings,
+    state.user_profile.currency
+  );
 
   const donut = renderChart(
     "donut",
@@ -44,7 +46,7 @@ export function renderDashboard(container) {
       </div>
       <p>${formatCurrency(netCapital, state.user_profile.currency)} מתוך ${formatCurrency(goal.target_amount, state.user_profile.currency)} (${progressPct.toFixed(1)}%)</p>
       <p>תאריך יעד: ${goal.target_date} · נותרו ${remaining} חודשים</p>
-      <p class="${trackClass}">${trackLabel} (פער חודשי: ${formatCurrency(gap, state.user_profile.currency)})</p>
+      ${suggestionsHtml}
     </div>
     <div class="grid-2">
       <div class="card">
