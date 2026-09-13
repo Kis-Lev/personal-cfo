@@ -44,12 +44,50 @@ function renderRow(tx) {
     </tr>`;
 }
 
+// A private, personal-merchant categorization rule (like a specific hair
+// salon or a market with a family name in it) must never enter the app's
+// public built-in rules file — this lets the user paste a batch of such
+// rules once, saved only into her own categorization_rules in her own
+// Drive, never touching any file that gets committed to the public repo.
+function renderBulkRuleImport(container) {
+  const section = container.querySelector("#bulk-rule-import");
+  section.innerHTML = `
+    <h3>ייבוא כללי סיווג פרטיים (בכמות)</h3>
+    <p style="color:var(--muted)">מקום זה נשמר רק בדרייב הפרטי שלך — לעולם לא בקוד הציבורי. הדביקי רשימה בפורמט JSON: <code>[{"merchant":"...","category":"...","sub_category":"..."}]</code></p>
+    <textarea id="bulk-rule-textarea" rows="6" style="width:100%; font-family:monospace; padding:8px; border:1px solid var(--border); border-radius:6px;"></textarea>
+    <p id="bulk-rule-status"></p>
+    <button type="button" id="bulk-rule-import-btn" class="primary">ייבא כללים</button>
+  `;
+
+  section.querySelector("#bulk-rule-import-btn").addEventListener("click", () => {
+    const statusEl = section.querySelector("#bulk-rule-status");
+    let entries;
+    try {
+      entries = JSON.parse(section.querySelector("#bulk-rule-textarea").value);
+      if (!Array.isArray(entries)) throw new Error("expected an array");
+    } catch (err) {
+      statusEl.textContent = `שגיאה בפענוח ה-JSON: ${err.message}`;
+      return;
+    }
+
+    const newRules = entries
+      .filter((e) => e && e.merchant && e.category && e.sub_category)
+      .map((e) => createRuleFromManualAssignment(e.merchant, e.category, e.sub_category));
+
+    setState((s) => ({ ...s, categorization_rules: [...s.categorization_rules, ...newRules] }));
+    persistState();
+    statusEl.textContent = `נוספו ${newRules.length} כללי סיווג פרטיים.`;
+    section.querySelector("#bulk-rule-textarea").value = "";
+  });
+}
+
 export async function renderTransactions(container) {
   taxonomyCache = taxonomyCache || (await loadTaxonomy());
   const state = getState();
   const transactions = sortedTransactions(state);
 
   container.innerHTML = `
+    <div class="card" id="bulk-rule-import"></div>
     <div class="card">
       <div style="display:flex; align-items:center; justify-content:space-between;">
         <h2>כל התנועות (${transactions.length})</h2>
@@ -67,6 +105,8 @@ export async function renderTransactions(container) {
       }
     </div>
   `;
+
+  renderBulkRuleImport(container);
 
   if (transactions.length === 0) return;
 
