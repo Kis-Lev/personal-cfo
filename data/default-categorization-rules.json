@@ -73,5 +73,17 @@
   { "match_type": "REGEX", "pattern": "IVREA TORINO PIACENZA", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "SHELL OIL", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bKSP\\b", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "ארומה", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" }
+  { "match_type": "CONTAINS", "pattern": "ארומה", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" },
+
+  { "match_type": "CONTAINS", "pattern": "משק", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "ביטוח", "category": "פיננסים, בריאות וביטוח", "sub_category": "ביטוחי בריאות וחיים", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "רכבת", "category": "רכב ותחבורה", "sub_category": "תחבורה ציבורית", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "אוטובוס", "category": "רכב ותחבורה", "sub_category": "תחבורה ציבורית", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "טיסה", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "AIRLINES", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "AIRWAYS", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "חדר כושר", "category": "פנאי, אירוח ואורח חיים", "sub_category": "כושר וספורט", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "פיטנס", "category": "פנאי, אירוח ואורח חיים", "sub_category": "כושר וספורט", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bGYM\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "כושר וספורט", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "אגרה", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" }
 ]
