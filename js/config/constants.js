@@ -19,6 +19,12 @@ export const SILENT_LOGIN_TIMEOUT_MS = 4000;
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";
 
+// Transactions in this category are treated as fixed monthly cost in the
+// dashboard/simulator cash-flow math (folded into "fixed expense", not the
+// WMA-projected "variable expense") — the user's own categorization stays
+// untouched, only which bucket the calculation puts it in changes.
+export const FIXED_TREATMENT_CATEGORY = "פיננסים, בריאות וביטוח";
+
 // Forecasting engine (WMA / outliers / volatility) — PRD section 4.1
 export const WMA_WINDOW_MONTHS = 6;
 // Z-score beyond this is treated as Non-Recurring and excluded from the regular forecast.

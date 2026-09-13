@@ -20,7 +20,7 @@ export function renderDashboard(container) {
   const remaining = monthsRemaining(goal.target_date);
   const required = requiredMonthlySavings(goal.target_amount, netCapital, remaining);
 
-  const { fixedIncome, fixedExpense, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
+  const { fixedIncome, fixedExpense, projectedFinanceInsurance, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
 
   const { status, gap } = feasibilityGap(netMonthlySavings, required);
   const trackClass = status === TRACK_STATUS.GREEN ? "track-green" : "track-red";
@@ -50,7 +50,7 @@ export function renderDashboard(container) {
       <div class="card">
         <h3>תמונת תזרים חודשית</h3>
         <p>הכנסות קבועות: ${formatCurrency(fixedIncome, state.user_profile.currency)}</p>
-        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, state.user_profile.currency)}</p>
+        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, state.user_profile.currency)}${projectedFinanceInsurance > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFinanceInsurance, state.user_profile.currency)} פיננסים/ביטוח)</span>` : ""}</p>
         <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, state.user_profile.currency)}</p>
         <p>קצב חיסכון נדרש: ${formatCurrency(required, state.user_profile.currency)}</p>
       </div>
