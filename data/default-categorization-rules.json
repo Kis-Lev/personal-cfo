@@ -8,6 +8,10 @@
   { "match_type": "REGEX", "pattern": "\\bRESTAURANT\\b", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bHOTEL\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bSPA\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "הוטל", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "מספרה", "category": "פנאי, אירוח ואורח חיים", "sub_category": "טיפוח ויופי", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "מספרת", "category": "פנאי, אירוח ואורח חיים", "sub_category": "טיפוח ויופי", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "יקב ", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
 
   { "match_type": "CONTAINS", "pattern": "מקדונלדס", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "MCDONALD", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
@@ -36,5 +40,28 @@
   { "match_type": "CONTAINS", "pattern": "סונול", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
 
   { "match_type": "CONTAINS", "pattern": "BIT", "category": "תשלום באפליקציות", "sub_category": "ביט", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "PAYBOX", "category": "תשלום באפליקציות", "sub_category": "פייבוקס", "confidence": "suggested" }
+  { "match_type": "CONTAINS", "pattern": "PAYBOX", "category": "תשלום באפליקציות", "sub_category": "פייבוקס", "confidence": "suggested" },
+
+  { "match_type": "CONTAINS", "pattern": "גולן טלקום", "category": "תקשורת", "sub_category": "סלולר", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "סלקום", "category": "תקשורת", "sub_category": "סלולר", "confidence": "suggested" },
+
+  { "match_type": "REGEX", "pattern": "ALIEXPRESS", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bAMAZON\\b", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
+
+  { "match_type": "REGEX", "pattern": "\\bUBER\\b", "category": "רכב ותחבורה", "sub_category": "מוניות", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "Gett", "category": "רכב ותחבורה", "sub_category": "מוניות", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "YANGO", "category": "רכב ותחבורה", "sub_category": "מוניות", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "פנגו", "category": "רכב ותחבורה", "sub_category": "חניה", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "כביש 6", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "EL MONTE", "category": "רכב ותחבורה", "sub_category": "השכרת רכב", "confidence": "suggested" },
+
+  { "match_type": "REGEX", "pattern": "\\bELAL\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "JETBLUE", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+
+  { "match_type": "CONTAINS", "pattern": "טיב טעם", "category": "מזון וצריכה שוטפת", "sub_category": "סופרמרקטים ומכולות", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bCVS\\b", "category": "מזון וצריכה שוטפת", "sub_category": "מוצרי פארם", "confidence": "suggested" },
+
+  { "match_type": "CONTAINS", "pattern": "כספונט", "category": "מזומן", "sub_category": "משיכת מזומן", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "דמי כרטיס", "category": "פיננסים, בריאות וביטוח", "sub_category": "עמלות בנק וכרטיסי אשראי", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "פספורטכארד", "category": "פיננסים, בריאות וביטוח", "sub_category": "ביטוחי בריאות וחיים", "confidence": "suggested" }
 ]
