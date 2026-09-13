@@ -5,6 +5,7 @@ import { validateAndNormalize, emptyDatabase } from "./storage/schema.js";
 import { initStore } from "./state/store.js";
 import { renderDashboard } from "./ui/dashboard.js";
 import { renderImportHub } from "./ui/import-hub.js";
+import { renderTransactions } from "./ui/transactions.js";
 import { renderFixedManager } from "./ui/fixed-manager.js";
 import { renderSimulator } from "./ui/simulator.js";
 import { escapeHtml } from "./utils/escape-html.js";
@@ -16,6 +17,7 @@ const mainNav = document.getElementById("main-nav");
 const routes = {
   dashboard: renderDashboard,
   import: renderImportHub,
+  transactions: renderTransactions,
   manager: renderFixedManager,
   simulator: renderSimulator,
 };

@@ -67,6 +67,7 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
       category,
       sub_category,
       source: sourceLabel,
+      source_file: file.name,
     };
     if (category === PENDING_CATEGORY_LABEL) {
       pendingQueue.push(transaction);
