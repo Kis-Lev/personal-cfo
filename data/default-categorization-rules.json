@@ -63,5 +63,15 @@
 
   { "match_type": "CONTAINS", "pattern": "כספונט", "category": "מזומן", "sub_category": "משיכת מזומן", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "דמי כרטיס", "category": "פיננסים, בריאות וביטוח", "sub_category": "עמלות בנק וכרטיסי אשראי", "confidence": "suggested" },
-  { "match_type": "CONTAINS", "pattern": "פספורטכארד", "category": "פיננסים, בריאות וביטוח", "sub_category": "ביטוחי בריאות וחיים", "confidence": "suggested" }
+  { "match_type": "CONTAINS", "pattern": "פספורטכארד", "category": "פיננסים, בריאות וביטוח", "sub_category": "ביטוחי בריאות וחיים", "confidence": "suggested" },
+
+  { "match_type": "REGEX", "pattern": "AIRBNB", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "SIXFLAGS", "category": "פנאי, אירוח ואורח חיים", "sub_category": "תחביבים", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "RECREATION\\.GOV", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "ATTIKI ODOS", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bSITAF\\b", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "IVREA TORINO PIACENZA", "category": "רכב ותחבורה", "sub_category": "אגרת כביש", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "SHELL OIL", "category": "רכב ותחבורה", "sub_category": "דלק", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "\\bKSP\\b", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
+  { "match_type": "CONTAINS", "pattern": "ארומה", "category": "מסעדות וברים", "sub_category": "בתי קפה", "confidence": "suggested" }
 ]
