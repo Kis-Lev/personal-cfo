@@ -4,8 +4,23 @@
 import { weightedMovingAverage } from "./forecasting.js";
 import { FIXED_TREATMENT_CATEGORY } from "../config/constants.js";
 
-export function currentNetCapital(goal, capitalLog) {
-  if (capitalLog.length === 0) return goal.initial_capital;
+/**
+ * Whether deposits/loans (tracked separately in the fixed-manager screen)
+ * count toward a goal's starting capital is the user's explicit per-goal
+ * choice (goal.include_financial_instruments) — never assumed. When she
+ * opts in, the baseline is every deposit's principal minus every loan's
+ * remaining principal; otherwise the baseline is 0. The manual capital-
+ * adjustment log always layers on top of that baseline, for a documented,
+ * explained correction (e.g. cash the tracked instruments don't see).
+ */
+export function currentNetCapital(goal, capitalLog, financialInstruments) {
+  let baseline = 0;
+  if (goal.include_financial_instruments) {
+    const depositsTotal = financialInstruments.deposits.reduce((sum, d) => sum + d.principal, 0);
+    const loansTotal = financialInstruments.loans.reduce((sum, l) => sum + l.remaining_principal, 0);
+    baseline = depositsTotal - loansTotal;
+  }
+  if (capitalLog.length === 0) return baseline;
   return capitalLog[capitalLog.length - 1].new_balance;
 }
 

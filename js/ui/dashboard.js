@@ -14,7 +14,7 @@ export function renderDashboard(container) {
     return;
   }
 
-  const netCapital = currentNetCapital(goal, state.capital_adjustments_log);
+  const netCapital = currentNetCapital(goal, state.capital_adjustments_log, state.financial_instruments);
   const progressPct = Math.min(100, (netCapital / goal.target_amount) * 100);
   const remaining = monthsRemaining(goal.target_date);
 

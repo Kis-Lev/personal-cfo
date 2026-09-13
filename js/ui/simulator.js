@@ -14,11 +14,15 @@ function renderGoalCreateForm(container, onChange) {
     <form id="new-goal-form" class="form-grid">
       <label>שם היעד <input name="title" required /></label>
       <label>סכום יעד <input name="target_amount" type="number" step="0.01" required /></label>
-      <label>הון התחלתי <input name="initial_capital" type="number" step="0.01" required /></label>
       <label>תאריך יעד <input name="target_date" type="date" required /></label>
       <label>עדיפות <input name="priority" type="number" step="1" value="1" required /></label>
+      <label style="display:flex; align-items:center; gap:6px;">
+        <input name="include_financial_instruments" type="checkbox" />
+        לכלול פיקדונות והלוואות קיימים בחישוב ההון ליעד הזה
+      </label>
       <button type="submit" class="primary">צור יעד</button>
     </form>
+    <p style="color:var(--muted)">אפשר לבחור לכל יעד בנפרד האם הפיקדונות וההלוואות שהזנת במסך "קבועות, הלוואות ופיקדונות" ייספרו בהון ההתחלתי שלו — הבחירה ניתנת לשינוי בכל עת.</p>
   `;
   container.querySelector("#new-goal-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -27,10 +31,10 @@ function renderGoalCreateForm(container, onChange) {
       goal_id: createId("goal"),
       title: data.title,
       target_amount: Number(data.target_amount),
-      initial_capital: Number(data.initial_capital),
       target_date: data.target_date,
       priority: Number(data.priority),
       is_flexible_timeline: false,
+      include_financial_instruments: data.include_financial_instruments === "on",
     };
     setState((s) => ({ ...s, goals: [...s.goals, newGoal] }));
     selectedGoalId = newGoal.goal_id;
@@ -41,17 +45,32 @@ function renderGoalCreateForm(container, onChange) {
 
 function renderCapitalAdjustmentPanel(container, goal, onChange) {
   const state = getState();
-  const netCapital = currentNetCapital(goal, state.capital_adjustments_log);
+  const netCapital = currentNetCapital(goal, state.capital_adjustments_log, state.financial_instruments);
 
   container.innerHTML = `
-    <h3>עדכון הון התחלתי</h3>
-    <p>הון נוכחי: ${formatCurrency(netCapital, state.user_profile.currency)}</p>
+    <h3>הון היעד</h3>
+    <label style="display:flex; align-items:center; gap:6px;">
+      <input id="include-instruments-toggle" type="checkbox" ${goal.include_financial_instruments ? "checked" : ""} />
+      לכלול פיקדונות והלוואות קיימים בחישוב ההון ליעד הזה
+    </label>
+    <p>הון נוכחי (${goal.include_financial_instruments ? "כולל פיקדונות פחות הלוואות" : "לא כולל פיקדונות/הלוואות"}, ${state.capital_adjustments_log.length > 0 ? "כולל תיקונים ידניים" : "ללא תיקון ידני עדיין"}): ${formatCurrency(netCapital, state.user_profile.currency)}</p>
+    <h4>עדכון הון ידני (מעבר לחישוב שלמעלה)</h4>
     <form id="capital-adjustment-form" class="form-grid">
-      <label>הון חדש <input name="new_balance" type="number" step="0.01" value="${netCapital}" required /></label>
+      <label>הון מתוקן <input name="new_balance" type="number" step="0.01" value="${netCapital}" required /></label>
       <label>הסבר (חובה) <input name="explanation" required /></label>
       <button type="submit" class="primary">עדכן הון</button>
     </form>
   `;
+
+  container.querySelector("#include-instruments-toggle").addEventListener("change", (e) => {
+    const include = e.target.checked;
+    setState((s) => ({
+      ...s,
+      goals: s.goals.map((g) => (g.goal_id === goal.goal_id ? { ...g, include_financial_instruments: include } : g)),
+    }));
+    persistState();
+    onChange();
+  });
 
   container.querySelector("#capital-adjustment-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -72,7 +91,7 @@ function renderCapitalAdjustmentPanel(container, goal, onChange) {
 
 function renderWhatIfPanel(container, goal, onChange) {
   const state = getState();
-  const netCapital = currentNetCapital(goal, state.capital_adjustments_log);
+  const netCapital = currentNetCapital(goal, state.capital_adjustments_log, state.financial_instruments);
   const { netMonthlySavings } = computeNetMonthlySavings(state);
 
   container.innerHTML = `
