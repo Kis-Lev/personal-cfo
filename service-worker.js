@@ -7,7 +7,10 @@
 // bump is triggered by a normal deploy. Cache is only a fallback for when the
 // network request itself fails (e.g. genuinely offline).
 const CACHE_NAME = "cfo-app-shell-v2";
-const APP_SHELL = ["/", "/index.html", "/css/styles.css", "/js/app.js"];
+// Relative to this worker's own URL, not the server root: on GitHub Pages the
+// app is served from a project subpath, where "/index.html" is a 404 — and a
+// single missing entry rejects addAll(), which fails the install outright.
+const APP_SHELL = ["./", "./index.html", "./css/styles.css", "./js/app.js"];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -25,6 +28,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Same-origin only — this cache is for the app's own static shell. A fetch
+  // handler fires for cross-origin requests too, so without this check every
+  // Drive API response would be written to disk, starting with the db.json
+  // read that carries the user's entire financial history. Left unhandled,
+  // those requests go straight to the network as if no worker existed.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {

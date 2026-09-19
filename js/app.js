@@ -87,3 +87,13 @@ document.getElementById("sign-out-btn").addEventListener("click", () => {
 });
 
 handleLogin({ silent: true });
+
+// Without this call the browser never loads service-worker.js at all, so the
+// app is not installable and has no offline fallback. The path is relative to
+// the page rather than the server root so it still resolves when the app is
+// served from a subpath (GitHub Pages).
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js").catch((err) => {
+    console.error("Service worker registration failed; the app still works, just not offline:", err);
+  });
+}
