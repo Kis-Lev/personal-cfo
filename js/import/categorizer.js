@@ -3,7 +3,12 @@
 // manual classification of the same merchant) — never guessed. PRD section 3.3.
 import { PENDING_CATEGORY_LABEL } from "../config/constants.js";
 
-function ruleMatches(rule, merchant) {
+/**
+ * Exported so the rules screen can count which transactions a rule affects
+ * using the very same test the import applies, rather than a second
+ * implementation that could disagree with it.
+ */
+export function ruleMatches(rule, merchant) {
   if (rule.match_type === "REGEX") {
     try {
       return new RegExp(rule.pattern, "i").test(merchant);

@@ -8,12 +8,15 @@ import { escapeHtml } from "../../utils/escape-html.js";
  * @param {string} config.title
  * @param {Array<{key:string, label:string, format?:(v:any,row:object)=>string}>} config.columns
  * @param {object[]} config.rows
- * @param {Array<{name:string, label:string, type?:string, step?:string, options?:string[]}>} config.formFields
- * @param {(formData:object)=>void} config.onAdd
+ * @param {Array<{name:string, label:string, type?:string, step?:string, options?:string[]}>} [config.formFields]
+ *   omit for a table that only lists and deletes what is already there, with
+ *   nothing to add by hand — the add form is then left out entirely
+ * @param {(formData:object)=>void} [config.onAdd]
  * @param {(rowIndex:number)=>void} config.onDelete
  * @param {Array<{label:string, onClick:(row:object, rowIndex:number)=>void}>} [config.rowActions]
+ * @param {string} [config.emptyMessage] shown instead of an empty table body
  */
-export function renderEditableTable(container, { title, columns, rows, formFields, onAdd, onDelete, rowActions = [] }) {
+export function renderEditableTable(container, { title, columns, rows, formFields, onAdd, onDelete, rowActions = [], emptyMessage }) {
   const fieldHtml = (f) => {
     if (f.options) {
       const opts = f.options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
@@ -22,12 +25,10 @@ export function renderEditableTable(container, { title, columns, rows, formField
     return `<label>${f.label} <input name="${f.name}" type="${f.type || "text"}" ${f.step ? `step="${f.step}"` : ""} required /></label>`;
   };
 
-  container.innerHTML = `
-    <h3>${title}</h3>
-    <table>
-      <thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join("")}<th></th></tr></thead>
-      <tbody>
-        ${rows
+  const bodyHtml =
+    rows.length === 0 && emptyMessage
+      ? `<tr><td colspan="${columns.length + 1}">${escapeHtml(emptyMessage)}</td></tr>`
+      : rows
           .map(
             (row, i) => `
           <tr data-index="${i}">
@@ -38,13 +39,22 @@ export function renderEditableTable(container, { title, columns, rows, formField
             </td>
           </tr>`
           )
-          .join("")}
-      </tbody>
+          .join("");
+
+  container.innerHTML = `
+    <h3>${title}</h3>
+    <table>
+      <thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join("")}<th></th></tr></thead>
+      <tbody>${bodyHtml}</tbody>
     </table>
-    <form class="add-form form-grid">
+    ${
+      formFields?.length
+        ? `<form class="add-form form-grid">
       ${formFields.map(fieldHtml).join("")}
       <button type="submit" class="primary">הוסף</button>
-    </form>
+    </form>`
+        : ""
+    }
   `;
 
   container.querySelectorAll(".delete-btn").forEach((btn, i) => btn.addEventListener("click", () => onDelete(i)));
@@ -55,7 +65,7 @@ export function renderEditableTable(container, { title, columns, rows, formField
       btn.addEventListener("click", () => action.onClick(rows[index], index));
     });
   });
-  container.querySelector(".add-form").addEventListener("submit", (e) => {
+  container.querySelector(".add-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
     onAdd(data);

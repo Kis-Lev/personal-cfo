@@ -6,6 +6,7 @@ import { initStore } from "./state/store.js";
 import { renderDashboard } from "./ui/dashboard.js";
 import { renderImportHub } from "./ui/import-hub.js";
 import { renderTransactions } from "./ui/transactions.js";
+import { renderRulesManager } from "./ui/rules-manager.js";
 import { renderFixedManager } from "./ui/fixed-manager.js";
 import { renderSimulator } from "./ui/simulator.js";
 import { escapeHtml } from "./utils/escape-html.js";
@@ -18,6 +19,7 @@ const routes = {
   dashboard: renderDashboard,
   import: renderImportHub,
   transactions: renderTransactions,
+  rules: renderRulesManager,
   manager: renderFixedManager,
   simulator: renderSimulator,
 };
