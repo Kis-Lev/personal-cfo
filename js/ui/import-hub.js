@@ -173,7 +173,6 @@ function renderMappingForm(container, file, rawRows) {
     const preset = {
       id: createId("preset"),
       display_name: data.preset_name?.trim() || `פורמט מותאם (${file.name})`,
-      header_row_index: headerRowIndex,
       columns: {
         date: columnFor("date"),
         merchant: columnFor("merchant"),
@@ -207,8 +206,9 @@ async function processFile(file, container) {
       renderMappingForm(container, file, rawRows); // genuinely new format — teach it once
       return;
     }
-    const candidates = normalizeRows(rawRows, detected, detected.id);
-    await finishImport(candidates, detected.id, file, container, detected.display_name);
+    const { preset, headerRowIndex } = detected;
+    const candidates = normalizeRows(rawRows, preset, preset.id, headerRowIndex);
+    await finishImport(candidates, preset.id, file, container, preset.display_name);
     return;
   }
 

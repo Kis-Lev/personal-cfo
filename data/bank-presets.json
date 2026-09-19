@@ -2,7 +2,6 @@
   {
     "id": "generic",
     "display_name": "פורמט גנרי (עמודות: תאריך, בית עסק, סכום)",
-    "header_row_index": 0,
     "columns": {
       "date": { "header": "תאריך" },
       "merchant": { "header": "בית עסק" },
@@ -13,7 +12,6 @@
   {
     "id": "credit_card_with_category_column",
     "display_name": "כרטיס אשראי - עם עמודת קטגוריה מובנית (transaction-details export)",
-    "header_row_index": 1,
     "columns": {
       "date": { "header": "תאריך עסקה" },
       "merchant": { "header": "שם בית העסק" },
@@ -24,7 +22,6 @@
   {
     "id": "credit_card_billing_date_transactions",
     "display_name": "כרטיס אשראי - עסקאות למועד חיוב (מס' שובר)",
-    "header_row_index": 1,
     "columns": {
       "date": { "header": "תאריך רכישה" },
       "merchant": { "header": "שם בית עסק" },
@@ -35,7 +32,6 @@
   {
     "id": "credit_card_transactions_and_credits",
     "display_name": "כרטיס אשראי - פירוט עסקאות וזיכויים",
-    "header_row_index": 0,
     "columns": {
       "date": { "header": "תאריך\nעסקה" },
       "merchant": { "header": "שם בית עסק" },
