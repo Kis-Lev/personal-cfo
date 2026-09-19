@@ -2,7 +2,7 @@ import { getState, setState } from "../state/store.js";
 import { escapeHtml } from "../utils/escape-html.js";
 import { parseCsv } from "../import/csv-parser.js";
 import { parseXlsx } from "../import/xlsx-parser.js";
-import { normalizeRows, detectMatchingPreset } from "../import/tabular-parser.js";
+import { normalizeRows, detectMatchingPreset, findHeaderRowIndex } from "../import/tabular-parser.js";
 import { loadBankPresets } from "../import/bank-presets.js";
 import { filterNewTransactions } from "../import/dedup.js";
 import { categorizeTransaction, createRuleFromConfirmation } from "../import/categorizer.js";
@@ -20,7 +20,6 @@ import { persistState } from "../storage/persist.js";
 const AUTO_DETECT_ID = "__auto_detect__";
 const MANUAL_MAPPING_ID = "__manual_mapping__";
 
-let pendingQueue = []; // transactions awaiting manual classification (not yet in the store)
 let taxonomyCache = null;
 let selectedPresetId = null;
 let builtInPresetsCache = [];
@@ -50,25 +49,77 @@ function allPresets() {
   return [...builtInPresetsCache, ...getState().import_presets];
 }
 
+// Every sheet of an uploaded file goes through here, whichever path chose the
+// preset (auto-detection, an explicitly picked preset, or a freshly-taught
+// manual mapping), so all three report the same way: which tab used which
+// format, how many rows each tab yielded, and — the part that used to be
+// invisible — which rows could not be read at all.
+// `resolve(rows, sheetIndex)` returns {preset, headerRowIndex} or null.
+function normalizeSheets(sheets, resolve) {
+  const candidates = [];
+  const skipped = [];
+  const unreadableSheets = [];
+  const perSheetBreakdown = [];
+  const detectedNames = new Set();
+  let dataRowCount = 0;
+
+  sheets.forEach((rows, i) => {
+    const resolved = resolve(rows, i);
+    if (!resolved || resolved.headerRowIndex === -1) {
+      // The tab's rows are real rows that nobody read. Counted and named here
+      // rather than passed over in silence, so "0 שורות" can never be mistaken
+      // for "this tab was empty".
+      unreadableSheets.push({ sheetIndex: i, rowCount: rows.length });
+      perSheetBreakdown.push(`טאב ${i + 1}: לא זוהה פורמט — ${rows.length} שורות לא נקראו`);
+      return;
+    }
+    const sheet = normalizeRows(rows, resolved.preset, resolved.preset.id, resolved.headerRowIndex);
+    // Tagged with the tab it came from: two tabs of one file often repeat the
+    // same transaction, while a repeat inside a single tab is a second real
+    // charge — dedup needs to tell those apart (see filterNewTransactions).
+    candidates.push(...sheet.candidates.map((c) => ({ ...c, sheetIndex: i })));
+    skipped.push(...sheet.skipped.map((row) => ({ ...row, sheetIndex: i })));
+    dataRowCount += sheet.dataRowCount;
+    detectedNames.add(resolved.preset.display_name);
+    perSheetBreakdown.push(
+      `טאב ${i + 1}: ${resolved.preset.display_name} (${sheet.candidates.length} שורות${
+        sheet.skipped.length > 0 ? `, ${sheet.skipped.length} לא נקראו` : ""
+      })`
+    );
+  });
+
+  return { candidates, skipped, unreadableSheets, dataRowCount, perSheetBreakdown, detectedNames };
+}
+
+function skippedRowsHtml(skipped) {
+  if (skipped.length === 0) return "";
+  return `
+    <details class="track-red" style="margin-top:8px;">
+      <summary>${skipped.length} שורות בקובץ לא נקראו ולא נכנסו לאף חישוב — לחצי לפירוט</summary>
+      <ul>
+        ${skipped
+          .map((row) => `<li>שורה ${row.rowNumber}: ${escapeHtml(row.reason)} — <span style="color:var(--muted)">${escapeHtml(row.preview)}</span></li>`)
+          .join("")}
+      </ul>
+    </details>`;
+}
+
 // Shared tail of every import path (known preset OR freshly-mapped format):
-// dedup -> categorize -> split auto/pending -> update UI -> archive+persist to Drive.
+// dedup -> categorize -> store -> update UI -> archive+persist to Drive.
 // The UI update happens BEFORE the Drive calls on purpose: a slow/failed Drive
 // request must never hide the fact that parsing/categorizing already succeeded.
-async function finishImport(candidates, file, container, detectedLabel) {
+async function finishImport(parsed, file, container, detectedLabel) {
   const state = getState();
-  const deduped = await filterNewTransactions(candidates, state.parsed_transactions);
+  const deduped = await filterNewTransactions(parsed.candidates, state.parsed_transactions);
 
-  const autoCategorized = [];
-  let suggestedCount = 0;
-  for (const candidate of deduped) {
+  let autoCategorizedCount = 0;
+  const imported = deduped.map((candidate) => {
     const { category, sub_category, needsConfirmation, matchedRule } = categorizeTransaction(candidate, allCategorizationRules());
     const transaction = {
       tx_id: candidate.tx_id,
       date: candidate.date,
       merchant: candidate.merchant,
       amount: candidate.amount,
-      category,
-      sub_category,
       // Each candidate already carries the id of whichever preset actually
       // matched IT (see normalizeRows) — that can differ row-to-row when a
       // file's tabs use different column templates, so it's used as-is
@@ -76,30 +127,64 @@ async function finishImport(candidates, file, container, detectedLabel) {
       source: candidate.source,
       source_file: file.name,
     };
-    if (category === PENDING_CATEGORY_LABEL) {
-      pendingQueue.push(transaction);
-    } else if (needsConfirmation) {
-      // A keyword-based guess, not a rule the user actually taught — never
-      // applied silently. Goes to the same review queue, pre-filled with the
-      // suggestion so confirming it is a single click, but she still sees it.
-      // Carries matchedRule so confirming promotes that keyword pattern itself
-      // (see groupPendingByRule/confirm below), not just this one row's exact text.
-      pendingQueue.push({ ...transaction, suggested: true, matchedRule });
-      suggestedCount++;
-    } else {
-      autoCategorized.push(transaction);
-    }
-  }
 
-  if (autoCategorized.length > 0) {
-    setState((s) => ({ ...s, parsed_transactions: [...s.parsed_transactions, ...autoCategorized] }));
-  }
+    if (category !== PENDING_CATEGORY_LABEL && !needsConfirmation) {
+      autoCategorizedCount++;
+      return { ...transaction, category, sub_category };
+    }
+
+    // Awaiting review, and stored anyway. Holding these in a module-scope
+    // array instead meant the money on them was in no total on any screen
+    // until the user got round to classifying them — and was lost outright
+    // on the next page reload, with the import summary still claiming they
+    // had been imported. Stored, they count everywhere from the moment they
+    // arrive; the category stays the pending label, so nothing is silently
+    // classified — a keyword guess rides along as a suggestion only.
+    return {
+      ...transaction,
+      category: PENDING_CATEGORY_LABEL,
+      sub_category: PENDING_CATEGORY_LABEL,
+      needs_review: true,
+      suggested_category: needsConfirmation ? category : null,
+      suggested_sub_category: needsConfirmation ? sub_category : null,
+      suggested_rule: matchedRule,
+    };
+  });
+
+  const duplicateCount = parsed.candidates.length - deduped.length;
+  const importRecord = {
+    import_id: createId("import"),
+    file_name: file.name,
+    imported_at: new Date().toISOString(),
+    data_rows: parsed.dataRowCount,
+    imported: imported.length,
+    duplicates: duplicateCount,
+    skipped: parsed.skipped,
+    unreadable_sheets: parsed.unreadableSheets,
+  };
+
+  setState((s) => ({
+    ...s,
+    parsed_transactions: [...s.parsed_transactions, ...imported],
+    import_log: [...s.import_log, importRecord],
+  }));
 
   renderPendingQueue(container.querySelector("#pending-queue"));
+
+  const pendingCount = imported.length - autoCategorizedCount;
   const detectionNote = detectedLabel ? `זוהה פורמט: ${detectedLabel}. ` : "";
-  const unclassifiedCount = deduped.length - autoCategorized.length - suggestedCount;
-  container.querySelector("#import-summary").textContent =
-    `${detectionNote}יובאו ${autoCategorized.length} תנועות באופן אוטומטי, ${suggestedCount} עם הצעת סיווג לאישור, ${unclassifiedCount} ללא סיווג, ${candidates.length - deduped.length} כפילויות נחסמו.`;
+  // Spelled out as an equation that closes: every data row in the file is in
+  // exactly one of these buckets, so the user can check the count against the
+  // file itself instead of taking a single "imported N" on trust.
+  const unreadableRows = parsed.unreadableSheets.reduce((sum, sheet) => sum + sheet.rowCount, 0);
+  container.querySelector("#import-summary").innerHTML =
+    `${escapeHtml(detectionNote)}${parsed.dataRowCount} שורות נתונים בקובץ = ` +
+    `${autoCategorizedCount} סווגו אוטומטית + ${pendingCount} ממתינות לסיווג (ונספרות כבר עכשיו) + ` +
+    `${duplicateCount} כפילויות נחסמו + ${parsed.skipped.length} לא נקראו.` +
+    (unreadableRows > 0
+      ? ` <span class="track-red">בנוסף, ${unreadableRows} שורות ב-${parsed.unreadableSheets.length} טאבים שלא זוהה בהם פורמט לא נקראו כלל.</span>`
+      : "") +
+    skippedRowsHtml(parsed.skipped);
 
   try {
     const { importsFolderId } = getDriveContext();
@@ -202,8 +287,8 @@ function renderMappingForm(container, file, sheets) {
     }
 
     mappingEl.innerHTML = "";
-    const candidates = sheets.flatMap((rows) => normalizeRows(rows, preset, preset.id));
-    await finishImport(candidates, file, container, preset.display_name);
+    const parsed = normalizeSheets(sheets, (rows) => ({ preset, headerRowIndex: findHeaderRowIndex(rows, preset.columns) }));
+    await finishImport(parsed, file, container, preset.display_name);
   });
 }
 
@@ -224,40 +309,36 @@ async function processFile(file, container) {
     // one tab, the summary spells out per-tab what was found (rather than
     // just one combined count), so a tab that silently contributed 0 rows
     // is visible instead of invisibly folded into the total.
-    const candidates = [];
-    const detectedNames = new Set();
-    const perSheetBreakdown = [];
-    sheets.forEach((rows, i) => {
-      const detected = detectMatchingPreset(rows, allPresets());
-      if (!detected) {
-        perSheetBreakdown.push(`טאב ${i + 1}: לא זוהה פורמט (0 שורות)`);
-        return;
-      }
-      const sheetCandidates = normalizeRows(rows, detected.preset, detected.preset.id, detected.headerRowIndex);
-      candidates.push(...sheetCandidates);
-      detectedNames.add(detected.preset.display_name);
-      perSheetBreakdown.push(`טאב ${i + 1}: ${detected.preset.display_name} (${sheetCandidates.length} שורות)`);
-    });
+    const parsed = normalizeSheets(sheets, (rows) => detectMatchingPreset(rows, allPresets()));
 
-    if (detectedNames.size === 0) {
+    if (parsed.detectedNames.size === 0) {
       renderMappingForm(container, file, sheets); // genuinely new format — teach it once
       return;
     }
 
-    const detectedLabel = sheets.length > 1 ? perSheetBreakdown.join(" | ") : [...detectedNames][0];
-    await finishImport(candidates, file, container, detectedLabel);
+    const detectedLabel = sheets.length > 1 ? parsed.perSheetBreakdown.join(" | ") : [...parsed.detectedNames][0];
+    await finishImport(parsed, file, container, detectedLabel);
     return;
   }
 
   // An explicit preset chosen from the dropdown overrides auto-detection.
   const preset = allPresets().find((p) => p.id === selectedPresetId) || allPresets()[0];
-  const candidates = sheets.flatMap((rows) => normalizeRows(rows, preset, preset.id));
-  await finishImport(candidates, file, container);
+  const parsed = normalizeSheets(sheets, (rows) => ({ preset, headerRowIndex: findHeaderRowIndex(rows, preset.columns) }));
+  await finishImport(parsed, file, container, preset.display_name);
+}
+
+// The transactions still waiting to be classified. They live in the store like
+// any other imported transaction (see finishImport) — this is a view over it,
+// not a separate holding pen — so the money on them is already inside every
+// total while the user works through the queue, and closing the tab mid-way
+// loses nothing.
+function pendingTransactions() {
+  return getState().parsed_transactions.filter((tx) => tx.needs_review);
 }
 
 // Groups pending transactions so the user classifies each distinct THING
 // ONCE — not once per transaction and not once per merchant-text variant.
-// A row with a pre-filled suggestion (tx.matchedRule) is grouped by that
+// A row with a pre-filled suggestion (tx.suggested_rule) is grouped by that
 // underlying keyword/regex pattern, not by its literal merchant text: real
 // bank/card exports often append a per-row reference number or branch code
 // to an otherwise-repeating merchant name (e.g. "סונול כביש 6 מסוף 00234"),
@@ -267,12 +348,12 @@ async function processFile(file, container) {
 // suggestion (nothing matched at all) have no pattern to group by, so they
 // still fall back to grouping by literal merchant text.
 function pendingGroupKey(tx) {
-  return tx.matchedRule ? `rule:${tx.matchedRule.match_type}:${tx.matchedRule.pattern}` : `merchant:${tx.merchant}`;
+  return tx.suggested_rule ? `rule:${tx.suggested_rule.match_type}:${tx.suggested_rule.pattern}` : `merchant:${tx.merchant}`;
 }
 
-function groupPendingByMerchant() {
+function groupPendingByMerchant(pending) {
   const groups = new Map();
-  for (const tx of pendingQueue) {
+  for (const tx of pending) {
     const key = pendingGroupKey(tx);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(tx);
@@ -282,20 +363,24 @@ function groupPendingByMerchant() {
 
 function renderPendingQueue(listEl) {
   if (!listEl) return;
-  if (pendingQueue.length === 0) {
+  const pending = pendingTransactions();
+  if (pending.length === 0) {
     listEl.innerHTML = `<p>אין תנועות הממתינות לסיווג.</p>`;
     return;
   }
 
-  const groups = groupPendingByMerchant();
+  const groups = groupPendingByMerchant(pending);
+  const pendingTotal = pending.reduce((sum, tx) => sum + tx.amount, 0);
   listEl.innerHTML =
-    `<p>${pendingQueue.length} תנועות ב-${groups.length} קבוצות ממתינות — סווגי כל קבוצה פעם אחת.</p>` +
+    `<p>${pending.length} תנועות ב-${groups.length} קבוצות ממתינות — סווגי כל קבוצה פעם אחת.</p>` +
+    `<p style="color:var(--muted)">סה"כ ${formatCurrency(pendingTotal)} — כבר נספר בכל הסיכומים בדשבורד, תחת "${escapeHtml(PENDING_CATEGORY_LABEL)}". הסיווג כאן רק מעביר אותן לקטגוריה הנכונה.</p>` +
     groups
       .map((group, i) => {
         const first = group.transactions[0];
         const distinctMerchants = new Set(group.transactions.map((tx) => tx.merchant));
-        const suggestion = first.suggested
-          ? `<p class="track-green">💡 הצעה: ${escapeHtml(first.category)} / ${escapeHtml(first.sub_category)} — אשרי אם נכון, או בחרי אחר. אישור כאן ייכנס אוטומטית לתוקף לכל תנועה עתידית מסוג זה, בלי לשאול שוב.</p>`
+        const groupTotal = group.transactions.reduce((sum, tx) => sum + tx.amount, 0);
+        const suggestion = first.suggested_category
+          ? `<p class="track-green">💡 הצעה: ${escapeHtml(first.suggested_category)} / ${escapeHtml(first.suggested_sub_category)} — אשרי אם נכון, או בחרי אחר. אישור כאן ייכנס אוטומטית לתוקף לכל תנועה עתידית מסוג זה, בלי לשאול שוב.</p>`
           : "";
         const label =
           distinctMerchants.size > 1
@@ -303,7 +388,7 @@ function renderPendingQueue(listEl) {
             : escapeHtml(first.merchant);
         return `
       <div class="card pending-card" data-index="${i}">
-        <p>${label} <span style="color:var(--muted)">(${group.transactions.length} תנועות, לדוגמה ${escapeHtml(first.date)} · ${formatCurrency(first.amount)})</span></p>
+        <p>${label} <span style="color:var(--muted)">(${group.transactions.length} תנועות, סה"כ ${formatCurrency(groupTotal)}, לדוגמה ${escapeHtml(first.date)} · ${formatCurrency(first.amount)})</span></p>
         ${suggestion}
         <select class="category-select" tabindex="0"></select>
         <select class="subcategory-select" tabindex="0"></select>
@@ -317,27 +402,32 @@ function renderPendingQueue(listEl) {
     const subCategorySelect = card.querySelector(".subcategory-select");
     wireCategoryCascade(categorySelect, subCategorySelect, taxonomyCache);
 
-    const suggested = groups[i].transactions[0];
-    if (suggested.suggested) {
-      categorySelect.value = suggested.category;
+    const first = groups[i].transactions[0];
+    if (first.suggested_category) {
+      categorySelect.value = first.suggested_category;
       categorySelect.dispatchEvent(new Event("change"));
-      subCategorySelect.value = suggested.sub_category;
+      subCategorySelect.value = first.suggested_sub_category;
     }
 
     const confirm = () => {
-      const index = Number(card.dataset.index);
-      const group = groups[index];
+      const group = groups[Number(card.dataset.index)];
       const category = categorySelect.value;
       const subCategory = subCategorySelect.value;
-      const confirmedTransactions = group.transactions.map(({ suggested, matchedRule, ...tx }) => ({ ...tx, category, sub_category: subCategory }));
+      const confirmedIds = new Set(group.transactions.map((tx) => tx.tx_id));
       const newRule = createRuleFromConfirmation(group.transactions[0], category, subCategory);
 
       setState((s) => ({
         ...s,
-        parsed_transactions: [...s.parsed_transactions, ...confirmedTransactions],
+        // Updated in place rather than appended: these transactions are
+        // already in the store, so adding them again would count every
+        // classified shekel twice.
+        parsed_transactions: s.parsed_transactions.map((tx) => {
+          if (!confirmedIds.has(tx.tx_id)) return tx;
+          const { needs_review, suggested_category, suggested_sub_category, suggested_rule, ...rest } = tx;
+          return { ...rest, category, sub_category: subCategory };
+        }),
         categorization_rules: [...s.categorization_rules, newRule],
       }));
-      pendingQueue = pendingQueue.filter((tx) => pendingGroupKey(tx) !== group.key);
       persistState();
       renderPendingQueue(listEl);
     };

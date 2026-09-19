@@ -1,5 +1,5 @@
 import { getState } from "../state/store.js";
-import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary, filesByMonth } from "../engine/cashflow.js";
+import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary, filesByMonth, unreadRowsByFile } from "../engine/cashflow.js";
 import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart, renderLegend } from "./charts.js";
@@ -16,8 +16,9 @@ function monthLabel(monthKey) {
 }
 
 async function renderFilesByMonthSection(state) {
-  const { months, rowsByMonth, recurringSources } = filesByMonth(state.parsed_transactions);
+  const { months, rowsByMonth, totalsByMonth, recurringSources } = filesByMonth(state.parsed_transactions);
   const currency = state.user_profile.currency;
+  const money = (amount) => formatCurrency(amount, currency);
 
   if (months.length === 0) {
     return `<div class="card"><h3>קבצים שהועלו לפי חודש</h3><p>עדיין אין תנועות מיובאות.</p></div>`;
@@ -33,20 +34,25 @@ async function renderFilesByMonthSection(state) {
   const sourceLabel = (source) => presetNames.get(source) || "פורמט מותאם (לא נשמר כפריסט)";
 
   const rows = rowsByMonth.get(selectedFilesMonth) || [];
-  const total = rows.reduce((sum, r) => sum + r.total, 0);
+  const totals = totalsByMonth.get(selectedFilesMonth) || { count: 0, charges: 0, credits: 0, total: 0, pendingCount: 0, pendingTotal: 0 };
+  const unread = unreadRowsByFile(state.import_log);
   const presentSources = new Set(rows.map((r) => r.source));
   const missingSources = [...recurringSources].filter((s) => !presentSources.has(s));
 
   const rowsHtml =
     rows.length === 0
-      ? `<tr><td colspan="4">לא הועלו קבצים בחודש זה.</td></tr>`
+      ? `<tr><td colspan="6">לא הועלו קבצים בחודש זה.</td></tr>`
       : rows
           .map(
             (r) => `<tr>
-              <td>${escapeHtml(r.sourceFile)}</td>
+              <td>${escapeHtml(r.sourceFile)}${
+                unread.has(r.sourceFile) ? ` <span class="track-red" title="${escapeHtml(unread.get(r.sourceFile).reasons.join(" · "))}">⚠ ${unread.get(r.sourceFile).unreadRows} שורות לא נקראו</span>` : ""
+              }</td>
               <td>${escapeHtml(sourceLabel(r.source))}</td>
               <td>${r.count}</td>
-              <td>${formatCurrency(r.total, currency)}</td>
+              <td>${money(r.charges)}</td>
+              <td>${r.credits === 0 ? "—" : money(r.credits)}</td>
+              <td>${money(r.total)}</td>
             </tr>`
           )
           .join("");
@@ -55,6 +61,37 @@ async function renderFilesByMonthSection(state) {
     missingSources.length > 0
       ? `<p class="track-red">⚠ לא נמצא החודש קובץ עבור: ${missingSources.map((s) => escapeHtml(sourceLabel(s))).join(", ")} — מקורות שהועלו בחודשים אחרים בעבר.</p>`
       : "";
+
+  // A card's billing cycle closes mid-month, so part of a file's transactions
+  // legitimately belong to the neighbouring month. Without saying so, this
+  // month's total looks like a file that came up short against the statement.
+  const straddling = rows.filter((r) => Math.abs(r.fileTotal - r.total) > 0.005);
+  const straddlingHtml =
+    straddling.length === 0
+      ? ""
+      : `<p style="color:var(--muted)">הקבצים הבאים פרוסים על יותר מחודש אחד (מועד חיוב שנסגר באמצע החודש), ולכן מוצג כאן רק החלק ששייך ל-${monthLabel(selectedFilesMonth)}:</p>
+         <ul style="color:var(--muted)">${straddling
+           .map(
+             (r) =>
+               `<li>${escapeHtml(r.sourceFile)}: בקובץ כולו ${money(r.fileTotal)} ב-${r.fileCount} תנועות — מתוכן ${money(r.total)} בחודש זה ו-${money(r.fileTotal - r.total)} בחודשים אחרים.</li>`
+           )
+           .join("")}</ul>`;
+
+  const pendingHtml =
+    totals.pendingCount === 0
+      ? ""
+      : `<p style="color:var(--muted)">${totals.pendingCount} מהתנועות החודש (${money(totals.pendingTotal)}) עדיין ממתינות לסיווג ידני — הן כבר כלולות בסכומים כאן ובדשבורד, תחת "ממתין לסיווג ידני".</p>`;
+
+  const unreadHtml = [...unread.entries()].filter(([fileName]) => rows.some((r) => r.sourceFile === fileName));
+  const unreadSectionHtml =
+    unreadHtml.length === 0
+      ? ""
+      : `<details class="track-red">
+          <summary>שורות שלא נקראו מהקבצים האלה ולכן אינן בשום סכום — לחצי לפירוט</summary>
+          <ul>${unreadHtml
+            .map(([fileName, info]) => `<li>${escapeHtml(fileName)} — ${info.unreadRows} שורות:<ul>${info.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ul></li>`)
+            .join("")}</ul>
+        </details>`;
 
   return `
     <div class="card">
@@ -71,11 +108,24 @@ async function renderFilesByMonthSection(state) {
       ${missingHtml}
       <table>
         <thead>
-          <tr><th>קובץ</th><th>מקור</th><th>מס' תנועות</th><th>סה"כ הוצאה</th></tr>
+          <tr><th>קובץ</th><th>מקור</th><th>מס' תנועות</th><th>חיובים</th><th>זיכויים</th><th>סה"כ נטו</th></tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
-        ${rows.length > 0 ? `<tfoot><tr><td colspan="3"><strong>סה"כ</strong></td><td><strong>${formatCurrency(total, currency)}</strong></td></tr></tfoot>` : ""}
+        ${
+          rows.length > 0
+            ? `<tfoot><tr>
+                <td colspan="2"><strong>סה"כ ${monthLabel(selectedFilesMonth)}</strong></td>
+                <td><strong>${totals.count}</strong></td>
+                <td><strong>${money(totals.charges)}</strong></td>
+                <td><strong>${totals.credits === 0 ? "—" : money(totals.credits)}</strong></td>
+                <td><strong>${money(totals.total)}</strong></td>
+              </tr></tfoot>`
+            : ""
+        }
       </table>
+      ${pendingHtml}
+      ${straddlingHtml}
+      ${unreadSectionHtml}
     </div>`;
 }
 
@@ -131,7 +181,7 @@ export async function renderDashboard(container) {
   const donut = renderChart("donut", cashflowSeries, { width: 220, height: 220 });
   const legend = renderLegend(cashflowSeries, state.user_profile.currency);
 
-  const { rows: categoryRows, overallMonthlyAverage } = categorySpendingSummary(state);
+  const { rows: categoryRows, overallMonthlyAverage, monthsCovered } = categorySpendingSummary(state);
   const currency = state.user_profile.currency;
   const categoryTableHtml =
     categoryRows.length === 0
@@ -181,7 +231,8 @@ export async function renderDashboard(container) {
     </div>
     <div class="card">
       <h3>ממוצע הוצאה חודשית לפי קטגוריה</h3>
-      <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong></p>
+      <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong>
+        <span style="color:var(--muted)">— סכום כל השורות בטבלה, כולן מחולקות באותם ${monthsCovered} חודשי נתונים.</span></p>
       ${categoryTableHtml}
     </div>
     <div id="files-by-month">${await renderFilesByMonthSection(state)}</div>

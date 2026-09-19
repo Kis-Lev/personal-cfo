@@ -70,11 +70,11 @@ export function createRuleFromManualAssignment(merchant, category, subCategory) 
  * this exact merchant text, as before.
  */
 export function createRuleFromConfirmation(transaction, category, subCategory) {
-  if (transaction.matchedRule) {
+  if (transaction.suggested_rule) {
     return {
       rule_id: `rule_${crypto.randomUUID()}`,
-      match_type: transaction.matchedRule.match_type,
-      pattern: transaction.matchedRule.pattern,
+      match_type: transaction.suggested_rule.match_type,
+      pattern: transaction.suggested_rule.pattern,
       category,
       sub_category: subCategory,
     };

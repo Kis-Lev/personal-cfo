@@ -23,6 +23,11 @@ export function emptyDatabase() {
     // any built-in preset — every bank/card issuer exports differently, so
     // these are taught once (via the manual mapping screen) and reused.
     import_presets: [],
+    // One record per uploaded file: how many data rows it held and what became
+    // of each of them. Kept so the dashboard can always answer "is this total
+    // the whole file?" — without it, a row the parser couldn't read left no
+    // trace anywhere once the import screen was closed.
+    import_log: [],
   };
 }
 
@@ -47,5 +52,6 @@ export function validateAndNormalize(rawData) {
     parsed_transactions: asArray(data.parsed_transactions),
     categorization_rules: asArray(data.categorization_rules),
     import_presets: asArray(data.import_presets),
+    import_log: asArray(data.import_log),
   };
 }

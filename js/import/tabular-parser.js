@@ -26,7 +26,7 @@ function buildColumnIndexMap(headerRow, presetColumns) {
   return indexMap;
 }
 
-function findHeaderRowIndex(rows, presetColumns) {
+export function findHeaderRowIndex(rows, presetColumns) {
   const limit = Math.min(rows.length, MAX_HEADER_SEARCH_ROWS);
   for (let i = 0; i < limit; i++) {
     const columnIndex = buildColumnIndexMap(rows[i] || [], presetColumns);
@@ -59,23 +59,53 @@ export function detectMatchingPreset(rows, presets) {
  * @param {number} [headerRowIndex] pass the value already found by detectMatchingPreset
  *   to avoid re-scanning; otherwise it's located fresh (e.g. when the user picked
  *   the preset explicitly from the dropdown instead of via auto-detect).
- * @returns {Array<{date:string, merchant:string, amount:number, accountId:string|null, source:string}>}
+ * @returns {{
+ *   candidates: Array<{date:string, merchant:string, amount:number, accountId:string|null, source:string}>,
+ *   skipped: Array<{rowNumber:number, reason:string, preview:string}>,
+ *   dataRowCount: number
+ * }}
+ *   Every data row lands in exactly one of `candidates` or `skipped`, so the two
+ *   always add back up to `dataRowCount`. A row that couldn't be read used to be
+ *   dropped with a bare `continue` — the money on it then went missing from every
+ *   total in the app, with no trace anywhere that a row had been left out at all.
+ *   Reporting it is what lets the import screen and the dashboard say out loud
+ *   that a file was only partly read.
  */
 export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderRowIndex(rows, preset.columns)) {
-  if (headerRowIndex === -1) return [];
+  if (headerRowIndex === -1) return { candidates: [], skipped: [], dataRowCount: 0 };
   const headerRow = rows[headerRowIndex] || [];
   const columnIndex = buildColumnIndexMap(headerRow, preset.columns);
   const dataRows = rows.slice(headerRowIndex + 1);
 
   const candidates = [];
-  for (const row of dataRows) {
+  const skipped = [];
+  dataRows.forEach((row, i) => {
+    const rawCell = (key) => String(row[columnIndex[key]] ?? "").trim();
     const date = columnIndex.date != null ? normalizeDateToIso(row[columnIndex.date]) : null;
-    const merchant = columnIndex.merchant != null ? String(row[columnIndex.merchant] ?? "").trim() : "";
+    const merchant = columnIndex.merchant != null ? rawCell("merchant") : "";
     const amount = columnIndex.amount != null ? parseAmount(row[columnIndex.amount]) : null;
-    const accountId = columnIndex.account_id != null ? String(row[columnIndex.account_id] ?? "").trim() || null : null;
+    const accountId = columnIndex.account_id != null ? rawCell("account_id") || null : null;
 
-    if (!date || !merchant || amount == null) continue; // incomplete row, skip rather than guess
+    const problems = [];
+    if (!date) problems.push(`תאריך לא קריא ("${rawCell("date")}")`);
+    if (!merchant) problems.push("שם בית עסק חסר");
+    if (amount == null) problems.push(`סכום לא קריא ("${rawCell("amount")}")`);
+
+    if (problems.length > 0) {
+      skipped.push({
+        // +2: one for the header row itself, one for 1-based counting, so the
+        // number matches the row gutter the user sees in Excel.
+        rowNumber: headerRowIndex + i + 2,
+        reason: problems.join(", "),
+        preview: row
+          .filter((cell) => String(cell).trim() !== "")
+          .join(" | ")
+          .slice(0, 120),
+      });
+      return;
+    }
     candidates.push({ date, merchant, amount, accountId, source });
-  }
-  return candidates;
+  });
+
+  return { candidates, skipped, dataRowCount: dataRows.length };
 }

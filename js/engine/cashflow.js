@@ -97,7 +97,15 @@ export function variableExpenseBreakdownByCategory(transactions) {
  * appears anywhere (a fixed rule or a transaction), shows the plain
  * arithmetic monthly average, broken into its fixed and transaction-derived
  * parts so no number here is a blended black box.
- * @returns {{ rows: Array<{category, fixedMonthly, avgFromTransactions, monthsWithData, monthlyAverage}>, overallMonthlyAverage: number }}
+ *
+ * Every category is averaged over the SAME denominator: the number of months
+ * the imported data covers. Dividing each category by only the months it
+ * happened to appear in made the rows incomparable and made their sum
+ * meaningless as a monthly figure — a single ₪3,000 charge in one month of six
+ * counted as ₪3,000 every month, so the "overall monthly average" came out far
+ * above what the household actually spends per month. monthsWithData is still
+ * reported per row, as the honest caveat on an average built from few months.
+ * @returns {{ rows: Array<{category, fixedMonthly, avgFromTransactions, monthsWithData, monthlyAverage}>, overallMonthlyAverage: number, monthsCovered: number }}
  */
 export function categorySpendingSummary(state) {
   // Bucketed in one pass over each list rather than re-filtering the whole
@@ -116,13 +124,14 @@ export function categorySpendingSummary(state) {
   }
 
   const categories = new Set([...fixedByCategory.keys(), ...transactionsByCategory.keys()]);
+  const monthsCovered = new Set(state.parsed_transactions.map((tx) => tx.date.slice(0, 7))).size;
 
   const rows = [...categories]
     .map((category) => {
       const fixedMonthly = fixedByCategory.get(category) || 0;
       const monthlyTotals = monthlyExpenseSeries(transactionsByCategory.get(category) || []);
       const monthsWithData = monthlyTotals.length;
-      const avgFromTransactions = monthsWithData > 0 ? monthlyTotals.reduce((a, b) => a + b, 0) / monthsWithData : 0;
+      const avgFromTransactions = monthsCovered > 0 ? monthlyTotals.reduce((a, b) => a + b, 0) / monthsCovered : 0;
       return {
         category,
         fixedMonthly,
@@ -134,24 +143,38 @@ export function categorySpendingSummary(state) {
     .sort((a, b) => b.monthlyAverage - a.monthlyAverage);
 
   const overallMonthlyAverage = rows.reduce((sum, r) => sum + r.monthlyAverage, 0);
-  return { rows, overallMonthlyAverage };
+  return { rows, overallMonthlyAverage, monthsCovered };
 }
 
 /**
- * Groups imported transactions by (billing month, source file) so the
- * dashboard can show, for any month, exactly which files were imported and
- * how much each contributed. A file's transactions can straddle a month
- * boundary (e.g. a billing cycle closing mid-month), so a file appears once
- * per month it actually has transactions in, rather than forced into a
- * single "file month".
+ * Groups imported transactions by (transaction month, source file) so the
+ * dashboard can show, for any month, exactly which files contributed to it and
+ * how much each one did. A file's transactions can straddle a month boundary
+ * (a card's billing cycle closes mid-month), so a file appears once per month
+ * it actually has transactions in.
+ *
+ * That split is also why every row carries its file's FULL total alongside the
+ * part of it that falls inside the selected month: a month's sum on its own
+ * looks wrong next to the statement it came from, and the missing money is not
+ * missing at all — it is sitting in the neighbouring month. Charges and credits
+ * are kept apart for the same reason: a refund is a negative amount, so a
+ * single netted figure under a column headed "total spent" silently understates
+ * what actually went out.
+ *
+ * Amounts here are as charged, never effectiveAmount(): this table is for
+ * checking a file against the statement it came from, and a total that quietly
+ * netted off reimbursements would no longer reconcile.
+ *
  * @returns {{
  *   months: string[],
- *   rowsByMonth: Map<string, Array<{sourceFile:string, source:string, count:number, total:number}>>,
+ *   rowsByMonth: Map<string, Array<{sourceFile, source, count, charges, credits, total, pendingCount, pendingTotal, fileCount, fileTotal}>>,
+ *   totalsByMonth: Map<string, {count, charges, credits, total, pendingCount, pendingTotal}>,
  *   recurringSources: Set<string>
  * }}
  */
 export function filesByMonth(transactions) {
   const groups = new Map();
+  const fileTotals = new Map(); // source file -> {count, total} across every month
   const sourceMonths = new Map(); // source -> Set of months it has ever appeared in
 
   for (const tx of transactions) {
@@ -161,22 +184,43 @@ export function filesByMonth(transactions) {
     // name can contain any character, so no literal separator is safe from
     // colliding two different (month, file) pairs onto one key.
     const key = JSON.stringify([month, sourceFile]);
-    if (!groups.has(key)) groups.set(key, { month, sourceFile, source: tx.source, count: 0, total: 0 });
+    if (!groups.has(key)) {
+      groups.set(key, { month, sourceFile, source: tx.source, count: 0, charges: 0, credits: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
+    }
     const group = groups.get(key);
     group.count += 1;
-    // Deliberately the amount as charged, not effectiveAmount: this table is
-    // for checking a file against the statement it came from, and a total that
-    // quietly netted off reimbursements would no longer reconcile.
     group.total += tx.amount;
+    if (tx.amount < 0) group.credits += tx.amount;
+    else group.charges += tx.amount;
+    if (tx.needs_review) {
+      group.pendingCount += 1;
+      group.pendingTotal += tx.amount;
+    }
+
+    if (!fileTotals.has(sourceFile)) fileTotals.set(sourceFile, { count: 0, total: 0 });
+    const fileTotal = fileTotals.get(sourceFile);
+    fileTotal.count += 1;
+    fileTotal.total += tx.amount;
 
     if (!sourceMonths.has(tx.source)) sourceMonths.set(tx.source, new Set());
     sourceMonths.get(tx.source).add(month);
   }
 
   const rowsByMonth = new Map();
+  const totalsByMonth = new Map();
   for (const group of groups.values()) {
+    const file = fileTotals.get(group.sourceFile);
+    const row = { ...group, fileCount: file.count, fileTotal: file.total };
     if (!rowsByMonth.has(group.month)) rowsByMonth.set(group.month, []);
-    rowsByMonth.get(group.month).push(group);
+    rowsByMonth.get(group.month).push(row);
+
+    if (!totalsByMonth.has(group.month)) {
+      totalsByMonth.set(group.month, { count: 0, charges: 0, credits: 0, total: 0, pendingCount: 0, pendingTotal: 0 });
+    }
+    const monthTotal = totalsByMonth.get(group.month);
+    for (const field of ["count", "charges", "credits", "total", "pendingCount", "pendingTotal"]) {
+      monthTotal[field] += row[field];
+    }
   }
   for (const rows of rowsByMonth.values()) rows.sort((a, b) => b.total - a.total);
 
@@ -186,7 +230,28 @@ export function filesByMonth(transactions) {
   // false alarms.
   const recurringSources = new Set([...sourceMonths.entries()].filter(([, months]) => months.size >= 2).map(([source]) => source));
 
-  return { months: [...rowsByMonth.keys()].sort(), rowsByMonth, recurringSources };
+  return { months: [...rowsByMonth.keys()].sort(), rowsByMonth, totalsByMonth, recurringSources };
+}
+
+/**
+ * Per uploaded file: how many of its rows never became a transaction, from the
+ * import log written at upload time. The dashboard puts this next to the file's
+ * total so a partially-read file can't pass for a complete one.
+ * @returns {Map<string, {unreadRows: number, reasons: string[]}>} keyed by file name
+ */
+export function unreadRowsByFile(importLog = []) {
+  const byFile = new Map();
+  for (const record of importLog) {
+    const skipped = record.skipped || [];
+    const unreadableRows = (record.unreadable_sheets || []).reduce((sum, sheet) => sum + sheet.rowCount, 0);
+    if (skipped.length === 0 && unreadableRows === 0) continue;
+    if (!byFile.has(record.file_name)) byFile.set(record.file_name, { unreadRows: 0, reasons: [] });
+    const entry = byFile.get(record.file_name);
+    entry.unreadRows += skipped.length + unreadableRows;
+    for (const row of skipped) entry.reasons.push(`שורה ${row.rowNumber}: ${row.reason}`);
+    if (unreadableRows > 0) entry.reasons.push(`${unreadableRows} שורות בטאבים שלא זוהה בהם פורמט`);
+  }
+  return byFile;
 }
 
 /**

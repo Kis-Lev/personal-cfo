@@ -6,6 +6,7 @@ import { loadTaxonomy } from "../utils/taxonomy.js";
 import { wireCategoryCascade } from "./components/category-cascade.js";
 import { createRuleFromManualAssignment } from "../import/categorizer.js";
 import { effectiveAmount } from "../engine/cashflow.js";
+import { PENDING_CATEGORY_LABEL } from "../config/constants.js";
 
 let taxonomyCache = null;
 let editingTxId = null;
@@ -73,7 +74,11 @@ function renderRow(tx) {
       <td>${escapeHtml(tx.date)}</td>
       <td>${escapeHtml(tx.merchant)}</td>
       <td>${formatCurrency(tx.amount)}</td>
-      <td>${escapeHtml(tx.category)}</td>
+      <td>${escapeHtml(tx.category)}${
+        tx.needs_review
+          ? ` <span class="track-red" title="נספרת בכל הסיכומים כבר עכשיו — הסיווג רק מעביר אותה לקטגוריה הנכונה">⏳ ממתינה לסיווג</span>`
+          : ""
+      }</td>
       <td>${escapeHtml(tx.sub_category)}</td>
       ${reimbursementCell(tx)}
       <td>${escapeHtml(tx.source_file || "")}</td>
@@ -128,9 +133,14 @@ export async function renderTransactions(container) {
   const transactions = filteredSortedTransactions(state);
   const isFiltered = transactions.length !== allCount;
 
-  const categoryOptions = taxonomyCache
-    .map((c) => `<option value="${escapeHtml(c.category)}" ${filterState.category === c.category ? "selected" : ""}>${c.icon} ${escapeHtml(c.category)}</option>`)
-    .join("");
+  const pendingCount = state.parsed_transactions.filter((tx) => tx.needs_review).length;
+  const categoryOptions =
+    taxonomyCache
+      .map((c) => `<option value="${escapeHtml(c.category)}" ${filterState.category === c.category ? "selected" : ""}>${c.icon} ${escapeHtml(c.category)}</option>`)
+      .join("") +
+    (pendingCount > 0
+      ? `<option value="${escapeHtml(PENDING_CATEGORY_LABEL)}" ${filterState.category === PENDING_CATEGORY_LABEL ? "selected" : ""}>⏳ ${escapeHtml(PENDING_CATEGORY_LABEL)} (${pendingCount})</option>`
+      : "");
 
   container.innerHTML = `
     <div class="card" id="bulk-rule-import"></div>
@@ -253,9 +263,13 @@ export async function renderTransactions(container) {
 
         setState((s) => ({
           ...s,
-          parsed_transactions: s.parsed_transactions.map((t) =>
-            t.tx_id === txId ? { ...t, category, sub_category, reimbursed_percent } : t
-          ),
+          parsed_transactions: s.parsed_transactions.map((t) => {
+            if (t.tx_id !== txId) return t;
+            // Classifying it here answers the same question the import
+            // screen's review queue asks, so it leaves that queue too.
+            const { needs_review, suggested_category, suggested_sub_category, suggested_rule, ...rest } = t;
+            return { ...rest, category, sub_category, reimbursed_percent };
+          }),
           categorization_rules: [...s.categorization_rules, newRule],
         }));
         editingTxId = null;
