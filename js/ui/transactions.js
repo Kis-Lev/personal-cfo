@@ -5,6 +5,7 @@ import { formatCurrency } from "../utils/currency.js";
 import { loadTaxonomy } from "../utils/taxonomy.js";
 import { wireCategoryCascade } from "./components/category-cascade.js";
 import { createRuleFromManualAssignment } from "../import/categorizer.js";
+import { effectiveAmount } from "../engine/cashflow.js";
 
 let taxonomyCache = null;
 let editingTxId = null;
@@ -35,6 +36,18 @@ function sortableHeader(field, label) {
   return `<th><button type="button" class="sort-header" data-field="${field}" style="background:none; border:none; cursor:pointer; font:inherit; font-weight:bold; padding:0;">${label}${arrow}</button></th>`;
 }
 
+// Shows what a reimbursed transaction still costs, next to what was charged —
+// a percentage on its own makes the reader do the arithmetic to find the
+// number the forecasts are actually built from.
+function reimbursementCell(tx) {
+  const percent = Number(tx.reimbursed_percent) || 0;
+  if (percent === 0) return "<td></td>";
+  const counted = effectiveAmount(tx);
+  return `<td class="track-green">${percent}% הוחזר${
+    counted > 0 ? `<br><span style="color:var(--muted)">נספר ${formatCurrency(counted)}</span>` : "<br><span style=\"color:var(--muted)\">לא נספר</span>"
+  }</td>`;
+}
+
 function renderRow(tx) {
   if (tx.tx_id === editingTxId) {
     return `
@@ -44,6 +57,10 @@ function renderRow(tx) {
         <td>${formatCurrency(tx.amount)}</td>
         <td><select class="category-select"></select></td>
         <td><select class="subcategory-select"></select></td>
+        <td>
+          <input class="reimbursed-input" type="number" min="0" max="100" step="5"
+                 value="${Number(tx.reimbursed_percent) || 0}" style="width:5.5em;" />%
+        </td>
         <td>${escapeHtml(tx.source_file || "")}</td>
         <td>
           <button type="button" class="primary save-btn">שמור</button>
@@ -58,6 +75,7 @@ function renderRow(tx) {
       <td>${formatCurrency(tx.amount)}</td>
       <td>${escapeHtml(tx.category)}</td>
       <td>${escapeHtml(tx.sub_category)}</td>
+      ${reimbursementCell(tx)}
       <td>${escapeHtml(tx.source_file || "")}</td>
       <td>
         <button type="button" class="edit-btn">ערוך</button>
@@ -144,7 +162,7 @@ export async function renderTransactions(container) {
           ? "<p>אין תנועות התואמות את הסינון הנוכחי.</p>"
           : `<table>
         <thead>
-          <tr>${sortableHeader("date", "תאריך")}${sortableHeader("merchant", "בית עסק")}${sortableHeader("amount", "סכום")}${sortableHeader("category", "קטגוריה")}${sortableHeader("sub_category", "תת-קטגוריה")}<th>קובץ מקור</th><th></th></tr>
+          <tr>${sortableHeader("date", "תאריך")}${sortableHeader("merchant", "בית עסק")}${sortableHeader("amount", "סכום")}${sortableHeader("category", "קטגוריה")}${sortableHeader("sub_category", "תת-קטגוריה")}<th title="אחוז מהתשלום שהוחזר לך (למשל מהעבודה) ולכן לא נספר בחישובים">הוחזר</th><th>קובץ מקור</th><th></th></tr>
         </thead>
         <tbody>${transactions.map(renderRow).join("")}</tbody>
       </table>`
@@ -230,11 +248,14 @@ export async function renderTransactions(container) {
       row.querySelector(".save-btn").addEventListener("click", () => {
         const category = categorySelect.value;
         const sub_category = subCategorySelect.value;
+        const reimbursed_percent = Math.min(100, Math.max(0, Number(row.querySelector(".reimbursed-input").value) || 0));
         const newRule = createRuleFromManualAssignment(tx.merchant, category, sub_category);
 
         setState((s) => ({
           ...s,
-          parsed_transactions: s.parsed_transactions.map((t) => (t.tx_id === txId ? { ...t, category, sub_category } : t)),
+          parsed_transactions: s.parsed_transactions.map((t) =>
+            t.tx_id === txId ? { ...t, category, sub_category, reimbursed_percent } : t
+          ),
           categorization_rules: [...s.categorization_rules, newRule],
         }));
         editingTxId = null;

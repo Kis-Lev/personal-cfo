@@ -40,11 +40,28 @@ export function sumFixedRulesMonthly(fixedRules, type) {
   return fixedRules.filter((r) => r.active && r.type === type).reduce((sum, r) => sum + r.amount, 0);
 }
 
+/**
+ * What a transaction actually cost the user, which is not always what was
+ * charged: a work expense paid from the personal account and then reimbursed
+ * left the account, so it shows up on the statement, but it is not her money
+ * and must not shape any forecast or average. The reimbursement is often
+ * partial, so this is a percentage rather than a flag — reimbursed_percent
+ * 100 removes the transaction from the maths entirely, 0 leaves it whole.
+ *
+ * Every spending calculation goes through monthlyExpenseSeries below, so
+ * applying it there is what keeps this one definition of "cost" from having
+ * to be repeated per calculation.
+ */
+export function effectiveAmount(transaction) {
+  const reimbursed = Math.min(100, Math.max(0, Number(transaction.reimbursed_percent) || 0));
+  return transaction.amount * (1 - reimbursed / 100);
+}
+
 function monthlyExpenseSeries(transactions) {
   const byMonth = new Map();
   for (const tx of transactions) {
     const monthKey = tx.date.slice(0, 7);
-    byMonth.set(monthKey, (byMonth.get(monthKey) || 0) + tx.amount);
+    byMonth.set(monthKey, (byMonth.get(monthKey) || 0) + effectiveAmount(tx));
   }
   return Array.from(byMonth.keys())
     .sort()
@@ -147,6 +164,9 @@ export function filesByMonth(transactions) {
     if (!groups.has(key)) groups.set(key, { month, sourceFile, source: tx.source, count: 0, total: 0 });
     const group = groups.get(key);
     group.count += 1;
+    // Deliberately the amount as charged, not effectiveAmount: this table is
+    // for checking a file against the statement it came from, and a total that
+    // quietly netted off reimbursements would no longer reconcile.
     group.total += tx.amount;
 
     if (!sourceMonths.has(tx.source)) sourceMonths.set(tx.source, new Set());
