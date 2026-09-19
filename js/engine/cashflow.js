@@ -77,17 +77,27 @@ export function variableExpenseBreakdownByCategory(transactions) {
  * @returns {{ rows: Array<{category, fixedMonthly, avgFromTransactions, monthsWithData, monthlyAverage}>, overallMonthlyAverage: number }}
  */
 export function categorySpendingSummary(state) {
-  const categories = new Set();
-  state.fixed_rules.filter((r) => r.active && r.type === "EXPENSE").forEach((r) => categories.add(r.category));
-  state.parsed_transactions.forEach((tx) => categories.add(tx.category));
+  // Bucketed in one pass over each list rather than re-filtering the whole
+  // transaction history once per category, which re-read every transaction as
+  // many times as there are categories.
+  const fixedByCategory = new Map();
+  for (const rule of state.fixed_rules) {
+    if (!rule.active || rule.type !== "EXPENSE") continue;
+    fixedByCategory.set(rule.category, (fixedByCategory.get(rule.category) || 0) + rule.amount);
+  }
+
+  const transactionsByCategory = new Map();
+  for (const tx of state.parsed_transactions) {
+    if (!transactionsByCategory.has(tx.category)) transactionsByCategory.set(tx.category, []);
+    transactionsByCategory.get(tx.category).push(tx);
+  }
+
+  const categories = new Set([...fixedByCategory.keys(), ...transactionsByCategory.keys()]);
 
   const rows = [...categories]
     .map((category) => {
-      const fixedMonthly = sumFixedRulesMonthly(
-        state.fixed_rules.filter((r) => r.category === category),
-        "EXPENSE"
-      );
-      const monthlyTotals = monthlyExpenseSeries(state.parsed_transactions.filter((tx) => tx.category === category));
+      const fixedMonthly = fixedByCategory.get(category) || 0;
+      const monthlyTotals = monthlyExpenseSeries(transactionsByCategory.get(category) || []);
       const monthsWithData = monthlyTotals.length;
       const avgFromTransactions = monthsWithData > 0 ? monthlyTotals.reduce((a, b) => a + b, 0) / monthsWithData : 0;
       return {
@@ -102,6 +112,55 @@ export function categorySpendingSummary(state) {
 
   const overallMonthlyAverage = rows.reduce((sum, r) => sum + r.monthlyAverage, 0);
   return { rows, overallMonthlyAverage };
+}
+
+/**
+ * Groups imported transactions by (billing month, source file) so the
+ * dashboard can show, for any month, exactly which files were imported and
+ * how much each contributed. A file's transactions can straddle a month
+ * boundary (e.g. a billing cycle closing mid-month), so a file appears once
+ * per month it actually has transactions in, rather than forced into a
+ * single "file month".
+ * @returns {{
+ *   months: string[],
+ *   rowsByMonth: Map<string, Array<{sourceFile:string, source:string, count:number, total:number}>>,
+ *   recurringSources: Set<string>
+ * }}
+ */
+export function filesByMonth(transactions) {
+  const groups = new Map();
+  const sourceMonths = new Map(); // source -> Set of months it has ever appeared in
+
+  for (const tx of transactions) {
+    const month = tx.date.slice(0, 7);
+    const sourceFile = tx.source_file || "—";
+    // JSON-encoded rather than concatenated with a separator character: a file
+    // name can contain any character, so no literal separator is safe from
+    // colliding two different (month, file) pairs onto one key.
+    const key = JSON.stringify([month, sourceFile]);
+    if (!groups.has(key)) groups.set(key, { month, sourceFile, source: tx.source, count: 0, total: 0 });
+    const group = groups.get(key);
+    group.count += 1;
+    group.total += tx.amount;
+
+    if (!sourceMonths.has(tx.source)) sourceMonths.set(tx.source, new Set());
+    sourceMonths.get(tx.source).add(month);
+  }
+
+  const rowsByMonth = new Map();
+  for (const group of groups.values()) {
+    if (!rowsByMonth.has(group.month)) rowsByMonth.set(group.month, []);
+    rowsByMonth.get(group.month).push(group);
+  }
+  for (const rows of rowsByMonth.values()) rows.sort((a, b) => b.total - a.total);
+
+  // A source that only ever showed up once (e.g. a one-off manually-mapped
+  // file that wasn't saved as a preset) isn't an "expected every month"
+  // source, so it's excluded from the missing-sources check below to avoid
+  // false alarms.
+  const recurringSources = new Set([...sourceMonths.entries()].filter(([, months]) => months.size >= 2).map(([source]) => source));
+
+  return { months: [...rowsByMonth.keys()].sort(), rowsByMonth, recurringSources };
 }
 
 /**

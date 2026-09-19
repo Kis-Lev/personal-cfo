@@ -1,16 +1,111 @@
 import { getState } from "../state/store.js";
-import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary } from "../engine/cashflow.js";
+import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary, filesByMonth } from "../engine/cashflow.js";
 import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart, renderLegend } from "./charts.js";
 import { escapeHtml } from "../utils/escape-html.js";
+import { loadBankPresets } from "../import/bank-presets.js";
 
-export function renderDashboard(container) {
+// Persists across re-renders of this screen (e.g. after picking a month),
+// same pattern as the filter/sort state kept at module scope in transactions.js.
+let selectedFilesMonth = null;
+
+function monthLabel(monthKey) {
+  const [year, month] = monthKey.split("-");
+  return `${month}/${year}`;
+}
+
+async function renderFilesByMonthSection(state) {
+  const { months, rowsByMonth, recurringSources } = filesByMonth(state.parsed_transactions);
+  const currency = state.user_profile.currency;
+
+  if (months.length === 0) {
+    return `<div class="card"><h3>קבצים שהועלו לפי חודש</h3><p>עדיין אין תנועות מיובאות.</p></div>`;
+  }
+
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  if (!selectedFilesMonth || !months.includes(selectedFilesMonth)) {
+    selectedFilesMonth = months.includes(currentMonth) ? currentMonth : months[months.length - 1];
+  }
+
+  const builtInPresets = await loadBankPresets();
+  const presetNames = new Map([...builtInPresets, ...state.import_presets].map((p) => [p.id, p.display_name]));
+  const sourceLabel = (source) => presetNames.get(source) || "פורמט מותאם (לא נשמר כפריסט)";
+
+  const rows = rowsByMonth.get(selectedFilesMonth) || [];
+  const total = rows.reduce((sum, r) => sum + r.total, 0);
+  const presentSources = new Set(rows.map((r) => r.source));
+  const missingSources = [...recurringSources].filter((s) => !presentSources.has(s));
+
+  const rowsHtml =
+    rows.length === 0
+      ? `<tr><td colspan="4">לא הועלו קבצים בחודש זה.</td></tr>`
+      : rows
+          .map(
+            (r) => `<tr>
+              <td>${escapeHtml(r.sourceFile)}</td>
+              <td>${escapeHtml(sourceLabel(r.source))}</td>
+              <td>${r.count}</td>
+              <td>${formatCurrency(r.total, currency)}</td>
+            </tr>`
+          )
+          .join("");
+
+  const missingHtml =
+    missingSources.length > 0
+      ? `<p class="track-red">⚠ לא נמצא החודש קובץ עבור: ${missingSources.map((s) => escapeHtml(sourceLabel(s))).join(", ")} — מקורות שהועלו בחודשים אחרים בעבר.</p>`
+      : "";
+
+  return `
+    <div class="card">
+      <h3>קבצים שהועלו לפי חודש</h3>
+      <label>בחרי חודש:
+        <select id="files-month-select">
+          ${months
+            .slice()
+            .reverse()
+            .map((m) => `<option value="${m}" ${m === selectedFilesMonth ? "selected" : ""}>${monthLabel(m)}</option>`)
+            .join("")}
+        </select>
+      </label>
+      ${missingHtml}
+      <table>
+        <thead>
+          <tr><th>קובץ</th><th>מקור</th><th>מס' תנועות</th><th>סה"כ הוצאה</th></tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        ${rows.length > 0 ? `<tfoot><tr><td colspan="3"><strong>סה"כ</strong></td><td><strong>${formatCurrency(total, currency)}</strong></td></tr></tfoot>` : ""}
+      </table>
+    </div>`;
+}
+
+// The month picker only affects this one card, so changing it re-renders just
+// this card. Re-rendering the whole dashboard re-ran every cash-flow
+// calculation and rebuilt both charts to update a single table, and threw away
+// the page's scroll position with the old DOM.
+async function refreshFilesByMonthSection(container) {
+  const host = container.querySelector("#files-by-month");
+  host.innerHTML = await renderFilesByMonthSection(getState());
+  wireFilesByMonthSection(container);
+}
+
+function wireFilesByMonthSection(container) {
+  container.querySelector("#files-month-select")?.addEventListener("change", (e) => {
+    selectedFilesMonth = e.target.value;
+    refreshFilesByMonthSection(container);
+  });
+}
+
+export async function renderDashboard(container) {
   const state = getState();
   const goal = [...state.goals].sort((a, b) => a.priority - b.priority)[0];
 
   if (!goal) {
-    container.innerHTML = `<div class="card"><p>אין עדיין יעד מוגדר. הוסיפי יעד במסך "סימולטור יעדים" כדי לראות את הדשבורד.</p></div>`;
+    container.innerHTML = `
+      <div class="card"><p>אין עדיין יעד מוגדר. הוסיפי יעד במסך "סימולטור יעדים" כדי לראות את הדשבורד.</p></div>
+      <div id="files-by-month">${await renderFilesByMonthSection(state)}</div>
+    `;
+    wireFilesByMonthSection(container);
     return;
   }
 
@@ -89,5 +184,7 @@ export function renderDashboard(container) {
       <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong></p>
       ${categoryTableHtml}
     </div>
+    <div id="files-by-month">${await renderFilesByMonthSection(state)}</div>
   `;
+  wireFilesByMonthSection(container);
 }
