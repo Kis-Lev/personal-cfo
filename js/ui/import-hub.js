@@ -33,14 +33,17 @@ function allCategorizationRules() {
   return [...getState().categorization_rules, ...defaultCategorizationRulesCache];
 }
 
-async function readFileAsRows(file) {
+// Every source ultimately becomes a list of row-grids (one per tab) so the
+// rest of the import pipeline never special-cases "how many sheets does this
+// file have" — a CSV is just a file with exactly one tab.
+async function readFileAsSheets(file) {
   // .xlsm (macro-enabled Excel) is the same ZIP+XML container as .xlsx —
   // the parser needs no changes, only recognizing the extension here.
   const isExcelBinary = /\.xlsm$|\.xlsx$/i.test(file.name);
   if (isExcelBinary) {
     return parseXlsx(await file.arrayBuffer());
   }
-  return parseCsv(await file.text());
+  return [parseCsv(await file.text())];
 }
 
 function allPresets() {
@@ -51,7 +54,7 @@ function allPresets() {
 // dedup -> categorize -> split auto/pending -> update UI -> archive+persist to Drive.
 // The UI update happens BEFORE the Drive calls on purpose: a slow/failed Drive
 // request must never hide the fact that parsing/categorizing already succeeded.
-async function finishImport(candidates, sourceLabel, file, container, detectedLabel) {
+async function finishImport(candidates, file, container, detectedLabel) {
   const state = getState();
   const deduped = await filterNewTransactions(candidates, state.parsed_transactions);
 
@@ -66,7 +69,11 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
       amount: candidate.amount,
       category,
       sub_category,
-      source: sourceLabel,
+      // Each candidate already carries the id of whichever preset actually
+      // matched IT (see normalizeRows) — that can differ row-to-row when a
+      // file's tabs use different column templates, so it's used as-is
+      // rather than one label forced onto the whole batch.
+      source: candidate.source,
       source_file: file.name,
     };
     if (category === PENDING_CATEGORY_LABEL) {
@@ -106,8 +113,14 @@ async function finishImport(candidates, sourceLabel, file, container, detectedLa
 // Every bank/card issuer exports a different column layout, so instead of
 // guessing formats we don't have real samples for, the user maps her actual
 // file's columns once here — optionally saving it as a reusable preset.
-function renderMappingForm(container, file, rawRows) {
+// `sheets` is every tab in the uploaded file; the mapping UI is built from
+// just the first one (sheets[0]), but the resulting preset's column headers
+// are matched by their actual text (see normalizeRows/findHeaderRowIndex),
+// so applying it to every other tab on submit re-locates each tab's own
+// header row automatically rather than assuming they all share one position.
+function renderMappingForm(container, file, sheets) {
   const mappingEl = container.querySelector("#mapping-form-area");
+  const firstSheetRows = sheets[0];
   const fieldDefs = [
     { key: "date", label: "עמודת תאריך", required: true },
     { key: "merchant", label: "עמודת בית עסק", required: true },
@@ -116,17 +129,19 @@ function renderMappingForm(container, file, rawRows) {
   ];
 
   function optionsForRow(headerRowIndex) {
-    const headerRow = rawRows[headerRowIndex] || [];
+    const headerRow = firstSheetRows[headerRowIndex] || [];
     return headerRow.map((cell, i) => `<option value="${i}">${escapeHtml(String(cell))}</option>`).join("");
   }
 
   mappingEl.innerHTML = `
     <div class="card">
       <h3>מיפוי עמודות (פורמט לא מוכר)</h3>
-      <p>לא זיהיתי פריסט מתאים ל"${escapeHtml(file.name)}". בחרי אילו עמודות בקובץ מייצגות כל שדה:</p>
+      <p>לא זיהיתי פריסט מתאים ל"${escapeHtml(file.name)}". בחרי אילו עמודות בקובץ מייצגות כל שדה (לפי הטאב הראשון)${
+        sheets.length > 1 ? ` — המיפוי יוחל אוטומטית על כל ${sheets.length} הטאבים בקובץ` : ""
+      }:</p>
       <form id="mapping-form" class="form-grid">
         <label>שורת הכותרות (1 = הראשונה)
-          <input name="header_row" type="number" min="1" max="${rawRows.length}" value="1" />
+          <input name="header_row" type="number" min="1" max="${firstSheetRows.length}" value="1" />
         </label>
         ${fieldDefs
           .map(
@@ -163,7 +178,7 @@ function renderMappingForm(container, file, rawRows) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(form).entries());
     const headerRowIndex = Number(data.header_row) - 1;
-    const headerRow = rawRows[headerRowIndex] || [];
+    const headerRow = firstSheetRows[headerRowIndex] || [];
 
     const columnFor = (fieldKey) => {
       if (data[fieldKey] === "") return { header: null };
@@ -187,35 +202,57 @@ function renderMappingForm(container, file, rawRows) {
     }
 
     mappingEl.innerHTML = "";
-    const candidates = normalizeRows(rawRows, preset, preset.id);
-    await finishImport(candidates, preset.id, file, container, preset.display_name);
+    const candidates = sheets.flatMap((rows) => normalizeRows(rows, preset, preset.id));
+    await finishImport(candidates, file, container, preset.display_name);
   });
 }
 
 async function processFile(file, container) {
-  const rawRows = await readFileAsRows(file);
+  const sheets = await readFileAsSheets(file);
 
   if (selectedPresetId === MANUAL_MAPPING_ID) {
-    renderMappingForm(container, file, rawRows);
+    renderMappingForm(container, file, sheets);
     return;
   }
 
   if (selectedPresetId === AUTO_DETECT_ID) {
-    const detected = detectMatchingPreset(rawRows, allPresets());
-    if (!detected) {
-      renderMappingForm(container, file, rawRows); // genuinely new format — teach it once
+    // Different tabs in the same file can use different column templates —
+    // e.g. domestic vs. foreign-currency transactions, or current vs.
+    // next-month billing, each with its own header wording — so every tab's
+    // format is detected on its own instead of assuming one preset fits all
+    // of them just because it matched the first tab. When there's more than
+    // one tab, the summary spells out per-tab what was found (rather than
+    // just one combined count), so a tab that silently contributed 0 rows
+    // is visible instead of invisibly folded into the total.
+    const candidates = [];
+    const detectedNames = new Set();
+    const perSheetBreakdown = [];
+    sheets.forEach((rows, i) => {
+      const detected = detectMatchingPreset(rows, allPresets());
+      if (!detected) {
+        perSheetBreakdown.push(`טאב ${i + 1}: לא זוהה פורמט (0 שורות)`);
+        return;
+      }
+      const sheetCandidates = normalizeRows(rows, detected.preset, detected.preset.id, detected.headerRowIndex);
+      candidates.push(...sheetCandidates);
+      detectedNames.add(detected.preset.display_name);
+      perSheetBreakdown.push(`טאב ${i + 1}: ${detected.preset.display_name} (${sheetCandidates.length} שורות)`);
+    });
+
+    if (detectedNames.size === 0) {
+      renderMappingForm(container, file, sheets); // genuinely new format — teach it once
       return;
     }
-    const { preset, headerRowIndex } = detected;
-    const candidates = normalizeRows(rawRows, preset, preset.id, headerRowIndex);
-    await finishImport(candidates, preset.id, file, container, preset.display_name);
+
+    const detectedLabel = sheets.length > 1 ? perSheetBreakdown.join(" | ") : [...detectedNames][0];
+    await finishImport(candidates, file, container, detectedLabel);
     return;
   }
 
   // An explicit preset chosen from the dropdown overrides auto-detection.
   const preset = allPresets().find((p) => p.id === selectedPresetId) || allPresets()[0];
-  const candidates = normalizeRows(rawRows, preset, preset.id);
-  await finishImport(candidates, preset.id, file, container);
+  const candidates = sheets.flatMap((rows) => normalizeRows(rows, preset, preset.id));
+  await finishImport(candidates, file, container);
 }
 
 // Groups pending transactions so the user classifies each distinct THING

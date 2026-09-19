@@ -9,8 +9,16 @@ const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_DIR_SIGNATURE = 0x02014b50;
 const LOCAL_HEADER_SIGNATURE = 0x04034b50;
 
+// The End Of Central Directory record is 22 bytes plus a trailing comment of at
+// most 65535 bytes, so it can only start within that distance of the end. Any
+// file that isn't a ZIP at all would otherwise be scanned to its first byte
+// before being rejected — for a large upload that's a long freeze on the main
+// thread for a question already answerable from the tail.
+const MAX_EOCD_SEARCH_BYTES = 22 + 0xffff;
+
 function findEndOfCentralDirectory(view) {
-  for (let i = view.byteLength - 22; i >= 0; i--) {
+  const lowestPossibleStart = Math.max(0, view.byteLength - MAX_EOCD_SEARCH_BYTES);
+  for (let i = view.byteLength - 22; i >= lowestPossibleStart; i--) {
     if (view.getUint32(i, true) === EOCD_SIGNATURE) return i;
   }
   throw new Error("קובץ אינו XLSX/ZIP תקין: לא נמצא End Of Central Directory.");
@@ -66,14 +74,18 @@ async function readEntryAsText(view, bytes, entries, path) {
   return new TextDecoder("utf-8").decode(data);
 }
 
+// A single string value is split across several <t> runs whenever parts of it
+// carry different formatting, so the runs are concatenated back into one text.
+function joinTextRuns(element) {
+  return Array.from(element.getElementsByTagName("t"))
+    .map((t) => t.textContent)
+    .join("");
+}
+
 function parseSharedStrings(xmlText) {
   if (!xmlText) return [];
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-  return Array.from(doc.getElementsByTagName("si")).map((si) =>
-    Array.from(si.getElementsByTagName("t"))
-      .map((t) => t.textContent)
-      .join("")
-  );
+  return Array.from(doc.getElementsByTagName("si")).map(joinTextRuns);
 }
 
 function columnLettersToIndex(cellRef) {
@@ -94,9 +106,20 @@ function parseWorksheet(xmlText, sharedStrings) {
     for (const cellEl of Array.from(rowEl.getElementsByTagName("c"))) {
       const ref = cellEl.getAttribute("r");
       const type = cellEl.getAttribute("t");
-      const valueEl = cellEl.getElementsByTagName("v")[0];
-      let value = valueEl ? valueEl.textContent : "";
-      if (type === "s") value = sharedStrings[Number(value)] ?? "";
+      // Text can reach a cell two different ways, and a file mixes both freely:
+      // t="s" points into the shared-string table, while t="inlineStr" carries
+      // the text in the cell itself under <is>, with no <v> at all. Reading only
+      // <v> silently yields "" for every inline cell — which wipes out a whole
+      // tab's header row and makes that tab look like an unrecognized format.
+      let value;
+      if (type === "inlineStr") {
+        const inlineEl = cellEl.getElementsByTagName("is")[0];
+        value = inlineEl ? joinTextRuns(inlineEl) : "";
+      } else {
+        const valueEl = cellEl.getElementsByTagName("v")[0];
+        value = valueEl ? valueEl.textContent : "";
+        if (type === "s") value = sharedStrings[Number(value)] ?? "";
+      }
       if (ref) row[columnLettersToIndex(ref)] = value;
     }
     rows.push(Array.from(row, (cell) => cell ?? ""));
@@ -105,7 +128,23 @@ function parseWorksheet(xmlText, sharedStrings) {
   return rows.filter((r) => r.some((cell) => String(cell).trim() !== ""));
 }
 
-/** @param {ArrayBuffer} arrayBuffer raw bytes of the uploaded .xlsx file */
+// Sheet display order/names live in xl/workbook.xml + its .rels, but neither
+// is needed here: every candidate row from every tab is merged into one pool
+// before anything downstream cares which sheet it came from, so a simple
+// numeric sort of the worksheet part names is enough to make parsing order
+// deterministic.
+function listWorksheetPaths(entries) {
+  return [...entries.keys()]
+    .filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]));
+}
+
+/**
+ * @param {ArrayBuffer} arrayBuffer raw bytes of the uploaded .xlsx file
+ * @returns {Promise<string[][][]>} one row-grid per worksheet/tab in the
+ *   file — every tab is parsed, not just the first, since a bank/card export
+ *   can spread multiple months or accounts across separate tabs.
+ */
 export async function parseXlsx(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   const view = new DataView(arrayBuffer);
@@ -114,9 +153,15 @@ export async function parseXlsx(arrayBuffer) {
   const sharedStringsXml = await readEntryAsText(view, bytes, entries, "xl/sharedStrings.xml");
   const sharedStrings = parseSharedStrings(sharedStringsXml);
 
-  const sheetXml = await readEntryAsText(view, bytes, entries, "xl/worksheets/sheet1.xml");
-  if (!sheetXml) {
-    throw new Error("לא נמצא גיליון בקובץ ה-XLSX (xl/worksheets/sheet1.xml חסר).");
+  const worksheetPaths = listWorksheetPaths(entries);
+  if (worksheetPaths.length === 0) {
+    throw new Error("לא נמצא אף גיליון בקובץ ה-XLSX (xl/worksheets/sheetN.xml חסר).");
   }
-  return parseWorksheet(sheetXml, sharedStrings);
+
+  const sheets = [];
+  for (const path of worksheetPaths) {
+    const sheetXml = await readEntryAsText(view, bytes, entries, path);
+    sheets.push(parseWorksheet(sheetXml, sharedStrings));
+  }
+  return sheets;
 }
