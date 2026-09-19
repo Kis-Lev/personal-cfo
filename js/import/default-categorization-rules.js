@@ -2,12 +2,8 @@
 // — user-dictated keyword-to-category defaults, not AI/guessing: the mapping
 // itself came from the user, this just loads it the same way bank-presets.js
 // and taxonomy.js load their own configuration files.
-let cachedRules = null;
+import { loadJsonOnce } from "../utils/load-json-once.js";
 
-export async function loadDefaultCategorizationRules() {
-  if (!cachedRules) {
-    const response = await fetch(new URL("../../data/default-categorization-rules.json", import.meta.url));
-    cachedRules = await response.json();
-  }
-  return cachedRules;
+export function loadDefaultCategorizationRules() {
+  return loadJsonOnce(new URL("../../data/default-categorization-rules.json", import.meta.url));
 }

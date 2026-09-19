@@ -1,13 +1,9 @@
 // Loads column-mapping presets from data/bank-presets.json so provider layouts
 // are configuration, never hardcoded inside the parsing logic.
-let cachedPresets = null;
+import { loadJsonOnce } from "../utils/load-json-once.js";
 
-export async function loadBankPresets() {
-  if (!cachedPresets) {
-    const response = await fetch(new URL("../../data/bank-presets.json", import.meta.url));
-    cachedPresets = await response.json();
-  }
-  return cachedPresets;
+export function loadBankPresets() {
+  return loadJsonOnce(new URL("../../data/bank-presets.json", import.meta.url));
 }
 
 export async function getBankPresetById(id) {
