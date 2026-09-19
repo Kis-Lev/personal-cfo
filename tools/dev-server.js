@@ -28,7 +28,13 @@ http
         return;
       }
       const ext = path.extname(filePath);
-      res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+      res.writeHead(200, {
+        "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+        // With no cache directive at all the browser is free to reuse a
+        // previously fetched module, so an edit can appear not to have taken
+        // effect — during development the file on disk is always the truth.
+        "Cache-Control": "no-store",
+      });
       res.end(data);
     });
   })
