@@ -15,6 +15,10 @@ export const DRIVE_UPLOAD_API_BASE = "https://www.googleapis.com/upload/drive/v3
 // popup blocked by the browser) never rejects on its own — cap how long we wait
 // before falling back to the interactive "Sign in" button.
 export const SILENT_LOGIN_TIMEOUT_MS = 4000;
+// Records only THAT this browser once completed the Google consent flow —
+// never a token, and nothing about the account. Used to decide whether a
+// silent re-auth is worth attempting at all.
+export const PRIOR_CONSENT_STORAGE_KEY = "cfo_app_prior_google_consent";
 
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";

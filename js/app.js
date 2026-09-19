@@ -1,4 +1,4 @@
-import { requestAccessToken, signOut } from "./auth/google-auth.js";
+import { requestAccessToken, signOut, hasPriorConsent } from "./auth/google-auth.js";
 import { ensureAppFolders, readDb } from "./storage/drive-client.js";
 import { setDriveContext } from "./storage/drive-context.js";
 import { validateAndNormalize, emptyDatabase } from "./storage/schema.js";
@@ -86,7 +86,14 @@ document.getElementById("sign-out-btn").addEventListener("click", () => {
   renderLoginScreen();
 });
 
-handleLogin({ silent: true });
+// Only a browser that has consented before stands a chance of completing the
+// silent flow, and a failed attempt leaves Google's popup open on screen with
+// no way to close it from here. A first visit goes straight to the button.
+if (hasPriorConsent()) {
+  handleLogin({ silent: true });
+} else {
+  renderLoginScreen();
+}
 
 // Without this call the browser never loads service-worker.js at all, so the
 // app is not installable and has no offline fallback. The path is relative to

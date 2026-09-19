@@ -3,10 +3,36 @@
 // The access token lives only in this module's memory — never in localStorage,
 // sessionStorage, or a cookie — so it disappears on refresh/close by design.
 import { GOOGLE_CLIENT_ID } from "../config/google-client-id.js";
-import { DRIVE_SCOPE } from "../config/constants.js";
+import { DRIVE_SCOPE, PRIOR_CONSENT_STORAGE_KEY } from "../config/constants.js";
 
 let accessToken = null;
 let tokenClient = null;
+
+/**
+ * Whether this browser has ever completed the consent flow. A silent re-auth
+ * opens a Google popup, and Google leaves that popup sitting on the sign-in
+ * page when there's no session to reuse — the window belongs to the Identity
+ * Services script, so nothing here can close it again. Asking first means a
+ * browser that has never consented (where the attempt is certain to fail)
+ * never opens one at all.
+ */
+export function hasPriorConsent() {
+  // Reading storage throws outright when the browser is set to block site
+  // data; treat that as "no record" rather than failing to start.
+  try {
+    return localStorage.getItem(PRIOR_CONSENT_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberConsent() {
+  try {
+    localStorage.setItem(PRIOR_CONSENT_STORAGE_KEY, "1");
+  } catch {
+    // Storage unavailable only costs a click on the next visit.
+  }
+}
 
 function getTokenClient() {
   if (!tokenClient) {
@@ -37,8 +63,13 @@ export function requestAccessToken({ silent = false } = {}) {
         return;
       }
       accessToken = response.access_token;
+      rememberConsent();
       resolve(accessToken);
     };
+    // A popup that can't open, or that the user dismisses, reports itself here
+    // and nowhere else — without this the promise simply never settles and the
+    // caller is left waiting out its timeout.
+    client.error_callback = (error) => reject(new Error(error?.type || "popup_failed"));
     client.requestAccessToken(silent ? { prompt: "none" } : {});
   });
 }
@@ -52,4 +83,11 @@ export function signOut() {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
   }
   accessToken = null;
+  // Consent was just revoked, so the next silent attempt would be guaranteed
+  // to fail and strand a popup.
+  try {
+    localStorage.removeItem(PRIOR_CONSENT_STORAGE_KEY);
+  } catch {
+    // Nothing was stored in the first place.
+  }
 }
