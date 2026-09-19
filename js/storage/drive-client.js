@@ -7,10 +7,16 @@ const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 // Every save was doing a "search by filename" call before every write, even
 // though the file's id never changes once found — that meant 2 Drive API
-// round-trips per save instead of 1. Cache the id per filename for this
-// session so repeat saves (which happen on almost every user action) skip
-// the redundant search.
+// round-trips per save instead of 1. Cache the id for this session so repeat
+// saves (which happen on almost every user action) skip the redundant search.
+// Keyed by folder AS WELL AS name: the same name exists in two folders the
+// moment a statement file happens to be called db.json, and a name-only key
+// would hand back the root database's id and overwrite it with the upload.
 const fileIdCache = new Map();
+
+function fileIdCacheKey(folderId, fileName) {
+  return JSON.stringify([folderId, fileName]);
+}
 
 function authHeaders(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
@@ -31,10 +37,18 @@ async function driveFetch(accessToken, path, options = {}) {
   return response;
 }
 
+// Drive's query language takes single-quoted string literals, so a value that
+// contains a quote or backslash would otherwise terminate the literal early and
+// let the rest of the value be read as query syntax. Reached with attacker-
+// controlled input directly: an imported file is looked up by its own file name.
+function escapeDriveQueryValue(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 async function findChild(accessToken, name, parentId, mimeType) {
-  const parentClause = parentId ? ` and '${parentId}' in parents` : " and 'root' in parents";
-  const mimeClause = mimeType ? ` and mimeType='${mimeType}'` : "";
-  const q = `name='${name}' and trashed=false${parentClause}${mimeClause}`;
+  const parentClause = parentId ? ` and '${escapeDriveQueryValue(parentId)}' in parents` : " and 'root' in parents";
+  const mimeClause = mimeType ? ` and mimeType='${escapeDriveQueryValue(mimeType)}'` : "";
+  const q = `name='${escapeDriveQueryValue(name)}' and trashed=false${parentClause}${mimeClause}`;
   const response = await driveFetch(accessToken, `/files?q=${encodeURIComponent(q)}&fields=files(id,name)`);
   const { files } = await response.json();
   return files[0] || null;
@@ -67,9 +81,10 @@ export async function ensureAppFolders(accessToken) {
 }
 
 async function resolveFileId(accessToken, folderId, fileName) {
-  if (fileIdCache.has(fileName)) return fileIdCache.get(fileName);
+  const cacheKey = fileIdCacheKey(folderId, fileName);
+  if (fileIdCache.has(cacheKey)) return fileIdCache.get(cacheKey);
   const existing = await findChild(accessToken, fileName, folderId, null);
-  if (existing) fileIdCache.set(fileName, existing.id);
+  if (existing) fileIdCache.set(cacheKey, existing.id);
   return existing?.id ?? null;
 }
 
@@ -105,7 +120,7 @@ async function writeJsonFile(accessToken, folderId, fileName, data) {
     body: multipartBody,
   });
   const newId = (await response.json()).id;
-  fileIdCache.set(fileName, newId);
+  fileIdCache.set(fileIdCacheKey(folderId, fileName), newId);
   return newId;
 }
 
@@ -125,15 +140,32 @@ export function writeConfig(accessToken, rootFolderId, data) {
   return writeJsonFile(accessToken, rootFolderId, CONFIG_FILE_NAME, data);
 }
 
-/** Archives an uploaded source file (raw CSV/XLSX bytes) into MyCFO_Data/imports/. */
+/**
+ * Archives an uploaded source file (raw CSV/XLSX bytes) into MyCFO_Data/imports/.
+ * Re-uploading a file with the same name (e.g. re-processing an old statement
+ * after a parser fix) overwrites that same Drive file in place, rather than
+ * piling up duplicate copies of it.
+ */
 export async function archiveImportFile(accessToken, importsFolderId, file) {
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+  const contentType = file.type || "application/octet-stream";
+  const existingFileId = await resolveFileId(accessToken, importsFolderId, file.name);
+
+  if (existingFileId) {
+    await fetch(`${DRIVE_UPLOAD_API_BASE}/files/${existingFileId}?uploadType=media`, {
+      method: "PATCH",
+      headers: { ...authHeaders(accessToken), "Content-Type": contentType },
+      body: fileBytes,
+    });
+    return existingFileId;
+  }
+
   const boundary = "cfo_app_boundary";
   const metadata = { name: file.name, parents: [importsFolderId] };
-  const fileBytes = new Uint8Array(await file.arrayBuffer());
   const encoder = new TextEncoder();
   const head = encoder.encode(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\nContent-Type: ${file.type || "application/octet-stream"}\r\n\r\n`
+      `--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`
   );
   const tail = encoder.encode(`\r\n--${boundary}--`);
   const body = new Blob([head, fileBytes, tail]);
@@ -143,5 +175,7 @@ export async function archiveImportFile(accessToken, importsFolderId, file) {
     headers: { ...authHeaders(accessToken), "Content-Type": `multipart/related; boundary=${boundary}` },
     body,
   });
-  return (await response.json()).id;
+  const newFileId = (await response.json()).id;
+  fileIdCache.set(fileIdCacheKey(importsFolderId, file.name), newFileId);
+  return newFileId;
 }
