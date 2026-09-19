@@ -23,11 +23,16 @@ export const PRIOR_CONSENT_STORAGE_KEY = "cfo_app_prior_google_consent";
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";
 
-// Transactions in this category are treated as fixed monthly cost in the
+// Transactions in these categories are treated as fixed monthly cost in the
 // dashboard/simulator cash-flow math (folded into "fixed expense", not the
 // WMA-projected "variable expense") — the user's own categorization stays
-// untouched, only which bucket the calculation puts it in changes.
-export const FIXED_TREATMENT_CATEGORY = "פיננסים, בריאות וביטוח";
+// untouched, only which bucket the calculation puts it in changes. A monthly
+// subscription qualifies for the same reason an insurance premium does: it is
+// charged whether or not anything was used that month.
+export const FIXED_TREATMENT_CATEGORIES = Object.freeze([
+  "פיננסים, בריאות וביטוח",
+  "מנויים ושירותים דיגיטליים",
+]);
 
 // Forecasting engine (WMA / outliers / volatility) — PRD section 4.1
 export const WMA_WINDOW_MONTHS = 6;

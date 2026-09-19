@@ -2,7 +2,13 @@
 // simulator.js so the two screens can never drift into two different answers
 // for "what is the user's current net capital / net monthly savings".
 import { weightedMovingAverage } from "./forecasting.js";
-import { FIXED_TREATMENT_CATEGORY } from "../config/constants.js";
+import { FIXED_TREATMENT_CATEGORIES } from "../config/constants.js";
+
+const fixedTreatmentCategories = new Set(FIXED_TREATMENT_CATEGORIES);
+
+function isFixedTreatment(transaction) {
+  return fixedTreatmentCategories.has(transaction.category);
+}
 
 /**
  * Whether deposits/loans (tracked separately in the fixed-manager screen)
@@ -46,7 +52,7 @@ function monthlyExpenseSeries(transactions) {
 }
 
 export function monthlyVariableExpenseSeries(transactions) {
-  return monthlyExpenseSeries(transactions.filter((tx) => tx.category !== FIXED_TREATMENT_CATEGORY));
+  return monthlyExpenseSeries(transactions.filter((tx) => !isFixedTreatment(tx)));
 }
 
 /**
@@ -56,7 +62,7 @@ export function monthlyVariableExpenseSeries(transactions) {
  * @returns {Array<{category:string, projected:number}>} sorted highest-first
  */
 export function variableExpenseBreakdownByCategory(transactions) {
-  const variableTransactions = transactions.filter((tx) => tx.category !== FIXED_TREATMENT_CATEGORY);
+  const variableTransactions = transactions.filter((tx) => !isFixedTreatment(tx));
   const byCategory = new Map();
   for (const tx of variableTransactions) {
     if (!byCategory.has(tx.category)) byCategory.set(tx.category, []);
@@ -165,23 +171,24 @@ export function filesByMonth(transactions) {
 
 /**
  * Net monthly savings = fixed income
- *   - (fixed expenses from fixed_rules + projected "פיננסים, בריאות וביטוח" spending)
+ *   - (fixed expenses from fixed_rules + projected spending in the
+ *      fixed-treatment categories)
  *   - projected (WMA) variable expenses (everything else).
  */
 export function computeNetMonthlySavings(state) {
   const fixedIncome = sumFixedRulesMonthly(state.fixed_rules, "INCOME");
   const fixedExpenseFromRules = sumFixedRulesMonthly(state.fixed_rules, "EXPENSE");
 
-  const financeInsuranceTransactions = state.parsed_transactions.filter((tx) => tx.category === FIXED_TREATMENT_CATEGORY);
-  const projectedFinanceInsurance = weightedMovingAverage(monthlyExpenseSeries(financeInsuranceTransactions));
-  const fixedExpense = fixedExpenseFromRules + projectedFinanceInsurance;
+  const fixedTreatmentTransactions = state.parsed_transactions.filter(isFixedTreatment);
+  const projectedFixedFromTransactions = weightedMovingAverage(monthlyExpenseSeries(fixedTreatmentTransactions));
+  const fixedExpense = fixedExpenseFromRules + projectedFixedFromTransactions;
 
   const projectedVariable = weightedMovingAverage(monthlyVariableExpenseSeries(state.parsed_transactions));
 
   return {
     fixedIncome,
     fixedExpense,
-    projectedFinanceInsurance,
+    projectedFixedFromTransactions,
     projectedVariable,
     netMonthlySavings: fixedIncome - fixedExpense - projectedVariable,
   };

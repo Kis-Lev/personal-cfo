@@ -113,7 +113,7 @@ export async function renderDashboard(container) {
   const progressPct = Math.min(100, (netCapital / goal.target_amount) * 100);
   const remaining = monthsRemaining(goal.target_date);
 
-  const { fixedIncome, fixedExpense, projectedFinanceInsurance, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
+  const { fixedIncome, fixedExpense, projectedFixedFromTransactions, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
 
   const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
     goal.target_amount,
@@ -169,7 +169,7 @@ export async function renderDashboard(container) {
       <div class="card">
         <h3>תמונת תזרים חודשית</h3>
         <p>הכנסות קבועות: ${formatCurrency(fixedIncome, currency)}</p>
-        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, currency)}${projectedFinanceInsurance > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFinanceInsurance, currency)} פיננסים/ביטוח)</span>` : ""}</p>
+        <p>הוצאות קבועות: ${formatCurrency(fixedExpense, currency)}${projectedFixedFromTransactions > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFixedFromTransactions, currency)} פיננסים/ביטוח ומנויים)</span>` : ""}</p>
         <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, currency)}</p>
         <p>קצב חיסכון נדרש: ${formatCurrency(required, currency)}</p>
       </div>

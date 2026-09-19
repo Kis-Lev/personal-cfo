@@ -90,7 +90,7 @@
   { "match_type": "REGEX", "pattern": "TST\\*", "category": "מסעדות וברים", "sub_category": "מסעדות", "confidence": "suggested" },
   { "match_type": "CONTAINS", "pattern": "GOOGLE", "category": "פנאי, אירוח ואורח חיים", "sub_category": "תחביבים", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "VIASAT", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
-  { "match_type": "REGEX", "pattern": "SPOTIFY", "category": "פנאי, אירוח ואורח חיים", "sub_category": "תחביבים", "confidence": "suggested" },
+  { "match_type": "REGEX", "pattern": "SPOTIFY", "category": "מנויים ושירותים דיגיטליים", "sub_category": "מוזיקה וסטרימינג", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "TIM HORTONS", "category": "מסעדות וברים", "sub_category": "מזון מהיר", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "PLAYSTATION", "category": "קניות אונליין", "sub_category": "קניות כלליות", "confidence": "suggested" },
   { "match_type": "REGEX", "pattern": "\\bLODGE\\b", "category": "פנאי, אירוח ואורח חיים", "sub_category": "חופשות וחו\"ל", "confidence": "suggested" },
