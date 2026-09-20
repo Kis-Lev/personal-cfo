@@ -92,7 +92,7 @@ function renderCapitalAdjustmentPanel(container, goal, onChange) {
 function renderWhatIfPanel(container, goal, onChange) {
   const state = getState();
   const netCapital = currentNetCapital(goal, state.capital_adjustments_log, state.financial_instruments);
-  const { netMonthlySavings, investmentContributions } = computeNetMonthlySavings(state);
+  const { netMonthlySavings, committedSavings } = computeNetMonthlySavings(state);
 
   container.innerHTML = `
     <h3>סימולציית פרמטרים (בזמן אמת)</h3>
@@ -122,8 +122,8 @@ function renderWhatIfPanel(container, goal, onChange) {
     resultsEl.innerHTML = `
       <p>קצב חיסכון נדרש: ${formatCurrency(required, state.user_profile.currency)} לחודש</p>
       <p>קצב חיסכון נוכחי: ${formatCurrency(netMonthlySavings, state.user_profile.currency)} לחודש${
-        investmentContributions > 0
-          ? ` <span style="color:var(--muted)">(כולל ${formatCurrency(investmentContributions, state.user_profile.currency)} שמופנים אוטומטית להשקעה)</span>`
+        committedSavings > 0
+          ? ` <span style="color:var(--muted)">(כולל ${formatCurrency(committedSavings, state.user_profile.currency)} שכבר מחויבים להשקעה ולפירעון קרן)</span>`
           : ""
       }</p>
       ${suggestionsHtml}

@@ -15,8 +15,10 @@ import { escapeHtml } from "../../utils/escape-html.js";
  * @param {(rowIndex:number)=>void} config.onDelete
  * @param {Array<{label:string, onClick:(row:object, rowIndex:number)=>void}>} [config.rowActions]
  * @param {string} [config.emptyMessage] shown instead of an empty table body
+ * @param {string} [config.note] a line of HTML under the title, for saying where
+ *   the numbers in this table come from or what else depends on them
  */
-export function renderEditableTable(container, { title, columns, rows, formFields, onAdd, onDelete, rowActions = [], emptyMessage }) {
+export function renderEditableTable(container, { title, columns, rows, formFields, onAdd, onDelete, rowActions = [], emptyMessage, note }) {
   const fieldHtml = (f) => {
     if (f.options) {
       const opts = f.options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
@@ -43,6 +45,7 @@ export function renderEditableTable(container, { title, columns, rows, formField
 
   container.innerHTML = `
     <h3>${title}</h3>
+    ${note ?? ""}
     <table>
       <thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join("")}<th></th></tr></thead>
       <tbody>${bodyHtml}</tbody>

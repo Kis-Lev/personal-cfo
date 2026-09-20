@@ -7,6 +7,7 @@ import { formatCurrency } from "../utils/currency.js";
 import { yearsBetween } from "../utils/dates.js";
 import { createId } from "../utils/ids.js";
 import { spitzerPayment, compoundInterest } from "../engine/interest.js";
+import { loanStateToday } from "../engine/loans.js";
 import { COMPOUNDING_FREQUENCY, AMORTIZATION_TYPE, FIXED_RULE_TYPE, FIXED_RULE_TYPE_LABELS } from "../config/constants.js";
 
 function renderFixedRulesSection(container, taxonomy) {
@@ -135,24 +136,49 @@ function renderDepositsSection(container) {
 
 function renderLoansSection(container) {
   const state = getState();
+  const note = `<p style="color:var(--muted)">ההחזר החודשי נלקח מכאן אוטומטית לתמונת התזרים בדשבורד — הריבית כהוצאה והקרן כפירעון שמגדיל הון. אם יש לך גם הוצאה קבועה ידנית על אותה הלוואה, מחקי אותה כדי לא לספור פעמיים.</p>`;
 
   renderEditableTable(container, {
     title: "הלוואות",
+    // Every derived column is read from loanStateToday rather than from the
+    // stored figures, so this table shows the loan as it stands now — the same
+    // numbers the dashboard's cash flow is built from, and never a split frozen
+    // on the day the loan was entered.
     columns: [
       { key: "name", label: "שם" },
-      { key: "remaining_principal", label: "יתרת קרן", format: (v) => formatCurrency(v, state.user_profile.currency) },
+      {
+        key: "remaining_principal",
+        label: "יתרת קרן היום",
+        format: (v, row) => {
+          const loan = loanStateToday(row);
+          const current = formatCurrency(loan.remainingPrincipal, state.user_profile.currency);
+          if (!loan.isDated) return `${current} <span style="color:var(--muted)">(כפי שהוזנה)</span>`;
+          return `${current} <span style="color:var(--muted)">(הוזן ${formatCurrency(v, state.user_profile.currency)} ב-${row.principal_as_of})</span>`;
+        },
+      },
       { key: "annual_interest_rate", label: "ריבית שנתית", format: (v) => `${(v * 100).toFixed(2)}%` },
-      { key: "term_months", label: "מספר תשלומים" },
+      { key: "term_months", label: "תשלומים שנותרו", format: (_v, row) => loanStateToday(row).paymentsRemaining },
       {
         key: "monthly_payment",
-        label: "החזר חודשי (מחושב)",
-        format: (_v, row) => formatCurrency(spitzerPayment(row.remaining_principal, row.annual_interest_rate, row.term_months), state.user_profile.currency),
+        label: "החזר חודשי (ריבית + קרן)",
+        format: (_v, row) => {
+          const loan = loanStateToday(row);
+          if (loan.isSettled) return "נפרעה";
+          return `${formatCurrency(loan.monthlyPayment, state.user_profile.currency)} <span style="color:var(--muted)">(${formatCurrency(
+            loan.monthlyInterest,
+            state.user_profile.currency
+          )} + ${formatCurrency(loan.monthlyPrincipal, state.user_profile.currency)})</span>`;
+        },
       },
     ],
     rows: state.financial_instruments.loans,
+    note,
     formFields: [
       { name: "name", label: "שם ההלוואה" },
       { name: "remaining_principal", label: "יתרת קרן", type: "number", step: "0.01" },
+      // Without a date the balance is a number with no point in time attached,
+      // and there is no way to tell how much of it has since been repaid.
+      { name: "principal_as_of", label: "היתרה נכונה לתאריך", type: "date" },
       { name: "annual_interest_rate", label: "ריבית שנתית (לדוגמה 0.055 = 5.5%)", type: "number", step: "0.0001" },
       { name: "term_months", label: "מספר תשלומים נותרים", type: "number", step: "1" },
       { name: "amortization_type", label: "סוג לוח סילוקין", options: Object.keys(AMORTIZATION_TYPE) },
@@ -165,6 +191,7 @@ function renderLoansSection(container) {
         loan_id: createId("loan"),
         name: data.name,
         remaining_principal: remainingPrincipal,
+        principal_as_of: data.principal_as_of || new Date().toISOString().slice(0, 10),
         annual_interest_rate: annualInterestRate,
         term_months: termMonths,
         monthly_payment: spitzerPayment(remainingPrincipal, annualInterestRate, termMonths),

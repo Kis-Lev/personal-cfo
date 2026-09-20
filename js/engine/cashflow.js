@@ -3,6 +3,7 @@
 // for "what is the user's current net capital / net monthly savings".
 import { weightedMovingAverage } from "./forecasting.js";
 import { periodKeyFor } from "./periods.js";
+import { loanCashflowTotals, loanStateToday } from "./loans.js";
 import { FIXED_TREATMENT_CATEGORIES, FIXED_RULE_TYPE } from "../config/constants.js";
 
 const fixedTreatmentCategories = new Set(FIXED_TREATMENT_CATEGORIES);
@@ -20,11 +21,17 @@ function isFixedTreatment(transaction) {
  * adjustment log always layers on top of that baseline, for a documented,
  * explained correction (e.g. cash the tracked instruments don't see).
  */
-export function currentNetCapital(goal, capitalLog, financialInstruments) {
+// `today` is a parameter rather than a call to new Date() inside, so the
+// amortized figure can be asserted against a fixed point in time.
+export function currentNetCapital(goal, capitalLog, financialInstruments, today = new Date()) {
   let baseline = 0;
   if (goal.include_financial_instruments) {
     const depositsTotal = financialInstruments.deposits.reduce((sum, d) => sum + d.principal, 0);
-    const loansTotal = financialInstruments.loans.reduce((sum, l) => sum + l.remaining_principal, 0);
+    // Amortized to today: the stored figure was true on the day it was
+    // entered, and every instalment since has made the debt smaller. Reading it
+    // literally freezes the debt forever and keeps net capital understated by
+    // everything repaid since.
+    const loansTotal = financialInstruments.loans.reduce((sum, l) => sum + loanStateToday(l, today).remainingPrincipal, 0);
     baseline = depositsTotal - loansTotal;
   }
   if (capitalLog.length === 0) return baseline;
@@ -289,11 +296,17 @@ export function unreadRowsByFile(importLog = []) {
  * feasibility maths treats as the savings rate. Subtracting it would say the
  * user saves less precisely because she saves automatically.
  *
- * What it does change is how much of that figure is still free to decide about,
- * so it is reported separately: investmentContributions is the committed part
- * and discretionarySurplus is what is actually left over. A single "left to
- * save" number hides the difference between money already on its way somewhere
- * and money sitting unspent.
+ * A loan instalment is split for the same reason, because it is two things at
+ * once: the interest is spent and joins fixed expenses, while the principal
+ * only moves from the account into a smaller debt and is saving exactly as the
+ * investment standing order is. Both are committed rather than free, so both
+ * are reported as such.
+ *
+ * What all this changes is how much of the savings rate is still free to decide
+ * about, so it is reported separately: committedSavings is the part already
+ * spoken for and discretionarySurplus is what is actually left over. A single
+ * "left to save" number hides the difference between money already on its way
+ * somewhere and money sitting unspent.
  */
 export function computeNetMonthlySavings(state) {
   const fixedIncome = sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.INCOME);
@@ -302,11 +315,16 @@ export function computeNetMonthlySavings(state) {
 
   const fixedTreatmentTransactions = state.parsed_transactions.filter(isFixedTreatment);
   const projectedFixedFromTransactions = weightedMovingAverage(monthlyExpenseSeries(fixedTreatmentTransactions));
-  const fixedExpense = fixedExpenseFromRules + projectedFixedFromTransactions;
+
+  // Taken from the loans themselves rather than from a fixed rule the user
+  // would have to keep in step with them by hand.
+  const loans = loanCashflowTotals(state.financial_instruments?.loans);
+  const fixedExpense = fixedExpenseFromRules + projectedFixedFromTransactions + loans.interest;
 
   const projectedVariable = weightedMovingAverage(monthlyVariableExpenseSeries(state.parsed_transactions));
 
   const netMonthlySavings = fixedIncome - fixedExpense - projectedVariable;
+  const committedSavings = investmentContributions + loans.principal;
 
   return {
     fixedIncome,
@@ -315,6 +333,11 @@ export function computeNetMonthlySavings(state) {
     projectedVariable,
     netMonthlySavings,
     investmentContributions,
-    discretionarySurplus: netMonthlySavings - investmentContributions,
+    loanInterest: loans.interest,
+    loanPrincipal: loans.principal,
+    loanPayment: loans.payment,
+    loansWithoutDate: loans.undatedCount,
+    committedSavings,
+    discretionarySurplus: netMonthlySavings - committedSavings,
   };
 }
