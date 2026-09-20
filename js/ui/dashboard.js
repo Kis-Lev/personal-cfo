@@ -175,13 +175,13 @@ export async function renderDashboard(container) {
     projectedFixedFromTransactions,
     projectedVariable,
     netMonthlySavings,
+    monthlyAccumulation,
     investmentContributions,
     loanInterest,
     loanPrincipal,
     loanPayment,
     loansWithoutDate,
     committedSavings,
-    discretionarySurplus,
   } = computeNetMonthlySavings(state);
 
   const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
@@ -200,7 +200,7 @@ export async function renderDashboard(container) {
     { label: "משתנות", value: projectedVariable },
     ...(investmentContributions > 0 ? [{ label: "מופנה להשקעה", value: investmentContributions }] : []),
     ...(loanPrincipal > 0 ? [{ label: "פירעון קרן הלוואות", value: loanPrincipal }] : []),
-    { label: committedSavings > 0 ? "יתרה חופשית" : "יתרה לחיסכון", value: Math.max(0, discretionarySurplus) },
+    { label: committedSavings > 0 ? "יתרה חופשית" : "יתרה לחיסכון", value: Math.max(0, netMonthlySavings) },
   ];
   const donut = renderChart("donut", cashflowSeries, { width: 220, height: 220 });
   const legend = renderLegend(cashflowSeries, state.user_profile.currency);
@@ -255,21 +255,25 @@ export async function renderDashboard(container) {
         }</p>
         <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, currency)}</p>
         ${loanPayment > 0 ? `<p>החזרי הלוואות: ${formatCurrency(loanPayment, currency)} <span style="color:var(--muted)">(${formatCurrency(loanInterest, currency)} ריבית + ${formatCurrency(loanPrincipal, currency)} קרן)</span></p>` : ""}
-        <p>קצב חיסכון: ${formatCurrency(netMonthlySavings, currency)}${
+        <p>קצב חיסכון (פנוי): <strong>${formatCurrency(netMonthlySavings, currency)}</strong>${
           committedSavings > 0
-            ? ` <span style="color:var(--muted)">(מתוכם ${[
+            ? ` <span style="color:var(--muted)">— אחרי ${[
                 investmentContributions > 0 ? `${formatCurrency(investmentContributions, currency)} להשקעה` : null,
                 loanPrincipal > 0 ? `${formatCurrency(loanPrincipal, currency)} פירעון קרן` : null,
-                discretionarySurplus >= 0 ? `${formatCurrency(discretionarySurplus, currency)} יתרה חופשית` : null,
               ]
                 .filter(Boolean)
-                .join(", ")})</span>`
+                .join(" ו-")}. זהו המספר שחישובי היעד משתמשים בו.</span>`
             : ""
         }</p>
         ${
-          committedSavings > 0 && discretionarySurplus < 0
+          committedSavings > 0
+            ? `<p>סך צבירה חודשית: ${formatCurrency(monthlyAccumulation, currency)} <span style="color:var(--muted)">(היתרה החופשית בתוספת מה שמחויב להשקעה ולפירעון קרן — קצב גידול ההון, לא כסף פנוי)</span></p>`
+            : ""
+        }
+        ${
+          committedSavings > 0 && netMonthlySavings < 0
             ? `<p class="track-red">⚠ ההתחייבויות הקבועות (השקעה ופירעון קרן) גדולות ב-${formatCurrency(
-                -discretionarySurplus,
+                -netMonthlySavings,
                 currency
               )} מהעודף החודשי — ההפרש מגיע מהיתרה הקיימת בחשבון, לא מההכנסה השוטפת.</p>`
             : ""

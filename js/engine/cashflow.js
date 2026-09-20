@@ -289,24 +289,24 @@ export function unreadRowsByFile(importLog = []) {
  *      fixed-treatment categories)
  *   - projected (WMA) variable expenses (everything else).
  *
- * A standing order into an investment account is NOT subtracted here, and that
- * is the whole point of it being its own rule type. It leaves the current
- * account, but it does not leave the user: it is saving that happens to be
- * automatic, so it is already part of this figure, which is what the goal
- * feasibility maths treats as the savings rate. Subtracting it would say the
- * user saves less precisely because she saves automatically.
+ * Money already committed elsewhere is subtracted: an investment standing
+ * order and the principal part of a loan instalment both leave the current
+ * account every month, so what is left to save is smaller by both. Only the
+ * interest part of the instalment is an expense, but the principal is no more
+ * available than the interest is.
  *
- * A loan instalment is split for the same reason, because it is two things at
- * once: the interest is spent and joins fixed expenses, while the principal
- * only moves from the account into a smaller debt and is saving exactly as the
- * investment standing order is. Both are committed rather than free, so both
- * are reported as such.
+ * Both of them do build net worth, which is why it is tempting to count them as
+ * saving. The reason not to is what this figure is FOR: the feasibility maths
+ * multiplies it by the remaining months and adds it to current capital. Money
+ * the app never sees land anywhere would then project progress toward a goal
+ * out of nothing — there is no investment portfolio tracked yet, so a
+ * contribution simply leaves the app's view, and a goal that does not opt into
+ * financial instruments never sees the debt shrink either. So the rule is to
+ * count as saving only what lands somewhere the goal can actually see.
  *
- * What all this changes is how much of the savings rate is still free to decide
- * about, so it is reported separately: committedSavings is the part already
- * spoken for and discretionarySurplus is what is actually left over. A single
- * "left to save" number hides the difference between money already on its way
- * somewhere and money sitting unspent.
+ * monthlyAccumulation reports the other figure — everything the household puts
+ * away, committed or not — because it is the honest measure of how fast net
+ * worth grows, and hiding it would understate what the user is doing.
  */
 export function computeNetMonthlySavings(state) {
   const fixedIncome = sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.INCOME);
@@ -323,7 +323,7 @@ export function computeNetMonthlySavings(state) {
 
   const projectedVariable = weightedMovingAverage(monthlyVariableExpenseSeries(state.parsed_transactions));
 
-  const netMonthlySavings = fixedIncome - fixedExpense - projectedVariable;
+  const surplus = fixedIncome - fixedExpense - projectedVariable;
   const committedSavings = investmentContributions + loans.principal;
 
   return {
@@ -331,13 +331,16 @@ export function computeNetMonthlySavings(state) {
     fixedExpense,
     projectedFixedFromTransactions,
     projectedVariable,
-    netMonthlySavings,
     investmentContributions,
     loanInterest: loans.interest,
     loanPrincipal: loans.principal,
     loanPayment: loans.payment,
     loansWithoutDate: loans.undatedCount,
     committedSavings,
-    discretionarySurplus: netMonthlySavings - committedSavings,
+    // What is genuinely free at the end of the month, and the figure every goal
+    // calculation uses.
+    netMonthlySavings: surplus - committedSavings,
+    // Free cash plus everything committed: how fast net worth actually grows.
+    monthlyAccumulation: surplus,
   };
 }
