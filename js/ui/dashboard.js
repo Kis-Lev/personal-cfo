@@ -169,7 +169,8 @@ export async function renderDashboard(container) {
   const progressPct = Math.min(100, (netCapital / goal.target_amount) * 100);
   const remaining = monthsRemaining(goal.target_date);
 
-  const { fixedIncome, fixedExpense, projectedFixedFromTransactions, projectedVariable, netMonthlySavings } = computeNetMonthlySavings(state);
+  const { fixedIncome, fixedExpense, projectedFixedFromTransactions, projectedVariable, netMonthlySavings, investmentContributions, discretionarySurplus } =
+    computeNetMonthlySavings(state);
 
   const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
     goal.target_amount,
@@ -179,10 +180,14 @@ export async function renderDashboard(container) {
     state.user_profile.currency
   );
 
+  // The leftover is split rather than shown as one slice: a standing order into
+  // an investment account has already decided where part of it is going, and a
+  // single "left to save" figure reads as money still free to use.
   const cashflowSeries = [
     { label: "קבועות", value: fixedExpense },
     { label: "משתנות", value: projectedVariable },
-    { label: "יתרה לחיסכון", value: Math.max(0, netMonthlySavings) },
+    ...(investmentContributions > 0 ? [{ label: "מופנה להשקעה", value: investmentContributions }] : []),
+    { label: investmentContributions > 0 ? "יתרה חופשית" : "יתרה לחיסכון", value: Math.max(0, discretionarySurplus) },
   ];
   const donut = renderChart("donut", cashflowSeries, { width: 220, height: 220 });
   const legend = renderLegend(cashflowSeries, state.user_profile.currency);
@@ -227,6 +232,23 @@ export async function renderDashboard(container) {
         <p>הכנסות קבועות: ${formatCurrency(fixedIncome, currency)}</p>
         <p>הוצאות קבועות: ${formatCurrency(fixedExpense, currency)}${projectedFixedFromTransactions > 0 ? ` <span style="color:var(--muted)">(מתוכן ${formatCurrency(projectedFixedFromTransactions, currency)} פיננסים/ביטוח ומנויים)</span>` : ""}</p>
         <p>הוצאות משתנות (חזוי WMA): ${formatCurrency(projectedVariable, currency)}</p>
+        <p>קצב חיסכון: ${formatCurrency(netMonthlySavings, currency)}${
+          investmentContributions > 0
+            ? ` <span style="color:var(--muted)">(מתוכם ${formatCurrency(investmentContributions, currency)} מופנים אוטומטית להשקעה${
+                discretionarySurplus >= 0
+                  ? `, ${formatCurrency(discretionarySurplus, currency)} יתרה חופשית`
+                  : ""
+              })</span>`
+            : ""
+        }</p>
+        ${
+          investmentContributions > 0 && discretionarySurplus < 0
+            ? `<p class="track-red">⚠ הוראות הקבע להשקעה גדולות ב-${formatCurrency(
+                -discretionarySurplus,
+                currency
+              )} מהעודף החודשי — ההפרש מגיע מהיתרה הקיימת בחשבון, לא מההכנסה השוטפת.</p>`
+            : ""
+        }
         <p>קצב חיסכון נדרש: ${formatCurrency(required, currency)}</p>
       </div>
       <div class="card">

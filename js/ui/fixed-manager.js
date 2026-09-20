@@ -7,15 +7,15 @@ import { formatCurrency } from "../utils/currency.js";
 import { yearsBetween } from "../utils/dates.js";
 import { createId } from "../utils/ids.js";
 import { spitzerPayment, compoundInterest } from "../engine/interest.js";
-import { COMPOUNDING_FREQUENCY, AMORTIZATION_TYPE } from "../config/constants.js";
+import { COMPOUNDING_FREQUENCY, AMORTIZATION_TYPE, FIXED_RULE_TYPE, FIXED_RULE_TYPE_LABELS } from "../config/constants.js";
 
 function renderFixedRulesSection(container, taxonomy) {
   const state = getState();
 
   renderEditableTable(container, {
-    title: "הכנסות והוצאות קבועות",
+    title: "הכנסות, הוצאות והפניות קבועות",
     columns: [
-      { key: "type", label: "סוג", format: (v) => (v === "INCOME" ? "הכנסה" : "הוצאה") },
+      { key: "type", label: "סוג", format: (v) => FIXED_RULE_TYPE_LABELS[v] ?? FIXED_RULE_TYPE_LABELS.EXPENSE },
       { key: "category", label: "קטגוריה" },
       { key: "sub_category", label: "תת-קטגוריה" },
       { key: "amount", label: "סכום", format: (v) => formatCurrency(v, state.user_profile.currency) },
@@ -24,7 +24,11 @@ function renderFixedRulesSection(container, taxonomy) {
     ],
     rows: state.fixed_rules,
     formFields: [
-      { name: "type", label: "סוג", options: [{ value: "EXPENSE", label: "הוצאה" }, { value: "INCOME", label: "הכנסה" }] },
+      {
+        name: "type",
+        label: "סוג",
+        options: Object.values(FIXED_RULE_TYPE).map((value) => ({ value, label: FIXED_RULE_TYPE_LABELS[value] })),
+      },
       { name: "category", label: "קטגוריה", options: [""] }, // replaced below by wireCategoryCascade
       { name: "sub_category", label: "תת-קטגוריה", options: [""] },
       { name: "amount", label: "סכום", type: "number", step: "0.01" },

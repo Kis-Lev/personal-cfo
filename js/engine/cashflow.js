@@ -3,7 +3,7 @@
 // for "what is the user's current net capital / net monthly savings".
 import { weightedMovingAverage } from "./forecasting.js";
 import { periodKeyFor } from "./periods.js";
-import { FIXED_TREATMENT_CATEGORIES } from "../config/constants.js";
+import { FIXED_TREATMENT_CATEGORIES, FIXED_RULE_TYPE } from "../config/constants.js";
 
 const fixedTreatmentCategories = new Set(FIXED_TREATMENT_CATEGORIES);
 
@@ -118,7 +118,10 @@ export function categorySpendingSummary(state) {
   // many times as there are categories.
   const fixedByCategory = new Map();
   for (const rule of state.fixed_rules) {
-    if (!rule.active || rule.type !== "EXPENSE") continue;
+    // Only real expenses: an investment standing order is money moving between
+    // the user's own pockets, and averaging it in as spending would say she
+    // consumes what she is in fact accumulating.
+    if (!rule.active || rule.type !== FIXED_RULE_TYPE.EXPENSE) continue;
     fixedByCategory.set(rule.category, (fixedByCategory.get(rule.category) || 0) + rule.amount);
   }
 
@@ -278,10 +281,24 @@ export function unreadRowsByFile(importLog = []) {
  *   - (fixed expenses from fixed_rules + projected spending in the
  *      fixed-treatment categories)
  *   - projected (WMA) variable expenses (everything else).
+ *
+ * A standing order into an investment account is NOT subtracted here, and that
+ * is the whole point of it being its own rule type. It leaves the current
+ * account, but it does not leave the user: it is saving that happens to be
+ * automatic, so it is already part of this figure, which is what the goal
+ * feasibility maths treats as the savings rate. Subtracting it would say the
+ * user saves less precisely because she saves automatically.
+ *
+ * What it does change is how much of that figure is still free to decide about,
+ * so it is reported separately: investmentContributions is the committed part
+ * and discretionarySurplus is what is actually left over. A single "left to
+ * save" number hides the difference between money already on its way somewhere
+ * and money sitting unspent.
  */
 export function computeNetMonthlySavings(state) {
-  const fixedIncome = sumFixedRulesMonthly(state.fixed_rules, "INCOME");
-  const fixedExpenseFromRules = sumFixedRulesMonthly(state.fixed_rules, "EXPENSE");
+  const fixedIncome = sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.INCOME);
+  const fixedExpenseFromRules = sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.EXPENSE);
+  const investmentContributions = sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.INVESTMENT);
 
   const fixedTreatmentTransactions = state.parsed_transactions.filter(isFixedTreatment);
   const projectedFixedFromTransactions = weightedMovingAverage(monthlyExpenseSeries(fixedTreatmentTransactions));
@@ -289,11 +306,15 @@ export function computeNetMonthlySavings(state) {
 
   const projectedVariable = weightedMovingAverage(monthlyVariableExpenseSeries(state.parsed_transactions));
 
+  const netMonthlySavings = fixedIncome - fixedExpense - projectedVariable;
+
   return {
     fixedIncome,
     fixedExpense,
     projectedFixedFromTransactions,
     projectedVariable,
-    netMonthlySavings: fixedIncome - fixedExpense - projectedVariable,
+    netMonthlySavings,
+    investmentContributions,
+    discretionarySurplus: netMonthlySavings - investmentContributions,
   };
 }

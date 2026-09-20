@@ -33,6 +33,28 @@ export const EXPENSE_CYCLE_START_DAY = 10;
 export const MIN_PLAUSIBLE_DATE_ISO = "2000-01-01";
 export const MAX_PLAUSIBLE_DATE_ISO = "2100-01-01";
 
+/**
+ * The kinds of recurring monthly rule.
+ *
+ * INVESTMENT is deliberately not an EXPENSE. A standing order into a brokerage
+ * account leaves the current account, so it is not money available to spend —
+ * but it is still the user's money, and net worth does not change the moment it
+ * moves. Filed as an expense it would collapse the savings rate on paper, make
+ * the goal look unreachable, and enter the category averages and the spending
+ * forecast as if it were consumption.
+ */
+export const FIXED_RULE_TYPE = Object.freeze({
+  INCOME: "INCOME",
+  EXPENSE: "EXPENSE",
+  INVESTMENT: "INVESTMENT",
+});
+
+export const FIXED_RULE_TYPE_LABELS = Object.freeze({
+  INCOME: "הכנסה",
+  EXPENSE: "הוצאה",
+  INVESTMENT: "הפניה להשקעה",
+});
+
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";
 
