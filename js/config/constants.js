@@ -94,3 +94,14 @@ export const TRACK_STATUS = Object.freeze({
   GREEN: "GREEN",
   RED: "RED",
 });
+
+// Spending analysis (engine/savings-opportunities.js)
+// A period counts as a one-off for a category when it dwarfs that category's
+// other periods AND the excess is worth naming — both are needed, or a month
+// of ₪60 against a median of ₪20 reads as an extraordinary event.
+export const ONE_OFF_MEDIAN_MULTIPLE = 2.5;
+export const ONE_OFF_MIN_EXCESS = 500;
+// A rise is only worth putting in front of the user when it is both a real
+// proportion of the category and a real amount of money.
+export const SPENDING_RISE_MIN_PERCENT = 15;
+export const SPENDING_RISE_MIN_AMOUNT = 150;

@@ -6,6 +6,12 @@ import { renderChart, renderLegend } from "./charts.js";
 import { escapeHtml } from "../utils/escape-html.js";
 import { loadBankPresets } from "../import/bank-presets.js";
 import { expenseCycleLabel, currentExpenseCycleKey } from "../engine/periods.js";
+import {
+  renderVariableBreakdownCard,
+  renderSavingsOpportunitiesCard,
+  renderSpendingRisesCard,
+  wireSavingsAdvice,
+} from "./components/savings-advice.js";
 
 // Persists across re-renders of this screen (e.g. after picking a cycle),
 // same pattern as the filter/sort state kept at module scope in transactions.js.
@@ -184,7 +190,7 @@ export async function renderDashboard(container) {
     committedSavings,
   } = computeNetMonthlySavings(state);
 
-  const { required, html: suggestionsHtml } = buildFeasibilitySuggestions(
+  const { required, gap, html: suggestionsHtml } = buildFeasibilitySuggestions(
     goal.target_amount,
     netCapital,
     remaining,
@@ -291,6 +297,11 @@ export async function renderDashboard(container) {
         ${legend}
       </div>
     </div>
+    ${renderSpendingRisesCard(state)}
+    <div class="grid-2">
+      ${renderVariableBreakdownCard(state)}
+      ${renderSavingsOpportunitiesCard(state, Math.max(0, -gap))}
+    </div>
     <div class="card">
       <h3>ממוצע הוצאה חודשית לפי קטגוריה</h3>
       <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong>
@@ -300,4 +311,5 @@ export async function renderDashboard(container) {
     <div id="files-by-month">${await renderFilesByMonthSection(state)}</div>
   `;
   wireFilesByMonthSection(container);
+  wireSavingsAdvice(container, Math.max(0, -gap));
 }

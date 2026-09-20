@@ -84,6 +84,37 @@ export function monthlyVariableExpenseSeries(transactions) {
   return monthlyExpenseSeries(transactions.filter((tx) => !isFixedTreatment(tx)));
 }
 
+export function variableTransactions(transactions) {
+  return transactions.filter((tx) => !isFixedTreatment(tx));
+}
+
+/** Every period any of these transactions falls in, oldest first. */
+export function periodAxisOf(transactions) {
+  return [...new Set(transactions.map(periodKeyFor))].sort();
+}
+
+/**
+ * A category's monthly totals laid out on a SHARED axis, with a zero for every
+ * period it had nothing in.
+ *
+ * Giving each category its own axis of only the months it appears in is what
+ * made the breakdown below disagree with the total it is supposed to explain: a
+ * one-off holiday charged in a single month became a series of length one, and
+ * a weighted average of one number is that number. The holiday then projected
+ * at its full amount forever, and the parts came out larger than the whole.
+ *
+ * On a shared axis a weighted average is linear, so the categories' projections
+ * add back up to the projection of their sum, exactly.
+ */
+export function alignedMonthlySeries(transactions, axis) {
+  const byPeriod = new Map();
+  for (const tx of transactions) {
+    const key = periodKeyFor(tx);
+    byPeriod.set(key, (byPeriod.get(key) || 0) + effectiveAmount(tx));
+  }
+  return axis.map((period) => byPeriod.get(period) || 0);
+}
+
 /**
  * Breaks the WMA-projected "variable expense" figure down by category, so the
  * dashboard never shows a single number with nothing behind it — every
@@ -91,14 +122,15 @@ export function monthlyVariableExpenseSeries(transactions) {
  * @returns {Array<{category:string, projected:number}>} sorted highest-first
  */
 export function variableExpenseBreakdownByCategory(transactions) {
-  const variableTransactions = transactions.filter((tx) => !isFixedTreatment(tx));
+  const variable = variableTransactions(transactions);
+  const axis = periodAxisOf(variable);
   const byCategory = new Map();
-  for (const tx of variableTransactions) {
+  for (const tx of variable) {
     if (!byCategory.has(tx.category)) byCategory.set(tx.category, []);
     byCategory.get(tx.category).push(tx);
   }
   return [...byCategory.entries()]
-    .map(([category, txs]) => ({ category, projected: weightedMovingAverage(monthlyExpenseSeries(txs)) }))
+    .map(([category, txs]) => ({ category, projected: weightedMovingAverage(alignedMonthlySeries(txs, axis)) }))
     .sort((a, b) => b.projected - a.projected);
 }
 

@@ -28,6 +28,11 @@ export function emptyDatabase() {
     // the whole file?" — without it, a row the parser couldn't read left no
     // trace anywhere once the import screen was closed.
     import_log: [],
+    // Categories the user has marked as off-limits for the savings suggestions.
+    // The app ranks where there is room to spend less, but it has no way to know
+    // which spending is worth having — so anything marked here is never
+    // suggested, whatever the arithmetic says.
+    protected_categories: [],
   };
 }
 
@@ -53,5 +58,6 @@ export function validateAndNormalize(rawData) {
     categorization_rules: asArray(data.categorization_rules),
     import_presets: asArray(data.import_presets),
     import_log: asArray(data.import_log),
+    protected_categories: asArray(data.protected_categories),
   };
 }
