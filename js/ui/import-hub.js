@@ -4,7 +4,7 @@ import { parseCsv } from "../import/csv-parser.js";
 import { parseXlsx } from "../import/xlsx-parser.js";
 import { normalizeRows, detectMatchingPreset, findHeaderRowIndex } from "../import/tabular-parser.js";
 import { loadBankPresets } from "../import/bank-presets.js";
-import { filterNewTransactions } from "../import/dedup.js";
+import { splitCandidatesAgainstStored } from "../import/dedup.js";
 import { categorizeTransaction, createRuleFromConfirmation } from "../import/categorizer.js";
 import { loadDefaultCategorizationRules } from "../import/default-categorization-rules.js";
 import { loadTaxonomy } from "../utils/taxonomy.js";
@@ -82,7 +82,7 @@ function normalizeSheets(sheets, resolve) {
     const sheet = normalizeRows(rows, resolved.preset, resolved.preset.id, resolved.headerRowIndex);
     // Tagged with the tab it came from: two tabs of one file often repeat the
     // same transaction, while a repeat inside a single tab is a second real
-    // charge — dedup needs to tell those apart (see filterNewTransactions).
+    // charge — dedup needs to tell those apart (see splitCandidatesAgainstStored).
     candidates.push(...sheet.candidates.map((c) => ({ ...c, sheetIndex: i })));
     skipped.push(...sheet.skipped.map((row) => ({ ...row, sheetIndex: i })));
     dataRowCount += sheet.dataRowCount;
@@ -127,16 +127,75 @@ function skippedRowsHtml(skipped) {
     </details>`;
 }
 
+// The fields the FILE is the authority on, and the only ones a re-import is
+// allowed to touch on a transaction that is already stored. Everything else on
+// a stored transaction belongs to the user — the category she chose, the
+// reimbursement percentage she set, whether it still awaits review — and a
+// re-import must never quietly undo that work.
+//
+// billing_cycle is here because it is derived from the statement as a whole,
+// which means rows imported before the app knew how to work it out cannot be
+// corrected from the row alone; re-uploading the file is what fixes them.
+const REFRESHABLE_FIELDS = ["billing_cycle"];
+
+function buildRefreshPatches(known, storedTransactions) {
+  const storedById = new Map(storedTransactions.map((tx) => [tx.tx_id, tx]));
+  const patches = new Map();
+
+  for (const candidate of known) {
+    const stored = storedById.get(candidate.tx_id);
+    if (!stored) continue;
+    const patch = {};
+    for (const field of REFRESHABLE_FIELDS) {
+      if (candidate[field] !== undefined && candidate[field] !== stored[field]) patch[field] = candidate[field];
+    }
+    if (Object.keys(patch).length > 0) patches.set(candidate.tx_id, patch);
+  }
+  return patches;
+}
+
+/**
+ * Transactions stored from this same file that the file no longer produces.
+ *
+ * A re-import lines rows up by a hash of date, merchant, amount and slip
+ * number, so a row whose AMOUNT the app once read wrongly — a credit read as a
+ * charge before trailing minus signs were understood, say — now hashes
+ * differently: it comes back as a new transaction while the old, wrong one
+ * stays in the store forever, and the file's total quietly counts twice.
+ *
+ * They are reported, never deleted: only the user can say whether a row that
+ * stopped matching is a mistake to remove or a transaction she edited.
+ */
+function findOrphanedTransactions(parsed, fileName, known, storedTransactions) {
+  if (parsed.candidates.length === 0) return [];
+  const matched = new Set(known.map((candidate) => candidate.tx_id));
+  return storedTransactions.filter((tx) => tx.source_file === fileName && !matched.has(tx.tx_id));
+}
+
+function orphanHtml(orphans) {
+  if (orphans.length === 0) return "";
+  return `
+    <details class="track-red" style="margin-top:8px;">
+      <summary>${orphans.length} תנועות שנשמרו בעבר מהקובץ הזה כבר לא מופיעות בקריאה הנוכחית — לחצי לפירוט</summary>
+      <p style="color:var(--muted)">קרוב לוודאי שהן נקראו בעבר בצורה שגויה (למשל זיכוי שנקרא כחיוב) ולכן נוצרו מחדש כתנועות נכונות. הן לא נמחקו — אפשר למחוק אותן ממסך התנועות אם הן אכן מיותרות.</p>
+      <ul>
+        ${orphans
+          .map((tx) => `<li>${escapeHtml(tx.date)} · ${escapeHtml(tx.merchant)} · ${formatCurrency(tx.amount)}</li>`)
+          .join("")}
+      </ul>
+    </details>`;
+}
+
 // Shared tail of every import path (known preset OR freshly-mapped format):
 // dedup -> categorize -> store -> update UI -> archive+persist to Drive.
 // The UI update happens BEFORE the Drive calls on purpose: a slow/failed Drive
 // request must never hide the fact that parsing/categorizing already succeeded.
 async function finishImport(parsed, file, container, detectedLabel) {
   const state = getState();
-  const deduped = await filterNewTransactions(parsed.candidates, state.parsed_transactions);
+  const { fresh, known, batchDuplicates } = await splitCandidatesAgainstStored(parsed.candidates, state.parsed_transactions);
 
   let autoCategorizedCount = 0;
-  const imported = deduped.map((candidate) => {
+  const imported = fresh.map((candidate) => {
     const { category, sub_category, needsConfirmation, matchedRule } = categorizeTransaction(candidate, allCategorizationRules());
     const transaction = {
       tx_id: candidate.tx_id,
@@ -177,21 +236,29 @@ async function finishImport(parsed, file, container, detectedLabel) {
     };
   });
 
-  const duplicateCount = parsed.candidates.length - deduped.length;
+  const refreshes = buildRefreshPatches(known, state.parsed_transactions);
+  const orphans = findOrphanedTransactions(parsed, file.name, known, state.parsed_transactions);
+
   const importRecord = {
     import_id: createId("import"),
     file_name: file.name,
     imported_at: new Date().toISOString(),
     data_rows: parsed.dataRowCount,
     imported: imported.length,
-    duplicates: duplicateCount,
+    already_stored: known.length,
+    refreshed: refreshes.size,
+    duplicates: batchDuplicates,
+    orphaned: orphans.map((tx) => ({ tx_id: tx.tx_id, date: tx.date, merchant: tx.merchant, amount: tx.amount })),
     skipped: parsed.skipped,
     unreadable_sheets: parsed.unreadableSheets,
   };
 
   setState((s) => ({
     ...s,
-    parsed_transactions: [...s.parsed_transactions, ...imported],
+    parsed_transactions: [
+      ...s.parsed_transactions.map((tx) => (refreshes.has(tx.tx_id) ? { ...tx, ...refreshes.get(tx.tx_id) } : tx)),
+      ...imported,
+    ],
     import_log: [...s.import_log, importRecord],
   }));
 
@@ -206,12 +273,14 @@ async function finishImport(parsed, file, container, detectedLabel) {
   container.querySelector("#import-summary").innerHTML =
     `${escapeHtml(detectionNote)}${parsed.dataRowCount} שורות נתונים בקובץ = ` +
     `${autoCategorizedCount} סווגו אוטומטית + ${pendingCount} ממתינות לסיווג (ונספרות כבר עכשיו) + ` +
-    `${duplicateCount} כפילויות נחסמו + ${parsed.skipped.filter(isUnreadRow).length} לא נקראו + ` +
+    `${known.length} כבר היו במאגר${refreshes.size > 0 ? ` (${refreshes.size} עודכנו)` : ""} + ` +
+    `${batchDuplicates} כפילויות בתוך הקובץ + ${parsed.skipped.filter(isUnreadRow).length} לא נקראו + ` +
     `${parsed.skipped.filter((row) => !isUnreadRow(row)).length} שורות שאינן תנועות (כותרות/סיכומים).` +
     statementTotalHtml(parsed.statementTotal) +
     (unreadableRows > 0
       ? ` <span class="track-red">בנוסף, ${unreadableRows} שורות ב-${parsed.unreadableSheets.length} טאבים שלא זוהה בהם פורמט לא נקראו כלל.</span>`
       : "") +
+    orphanHtml(orphans) +
     skippedRowsHtml(parsed.skipped);
 
   try {

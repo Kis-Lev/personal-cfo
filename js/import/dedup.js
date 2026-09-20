@@ -29,17 +29,32 @@ export function computeTransactionHash({ date, merchant, amount, accountId }) {
  * second tab's copies line up one-for-one with the first tab's and collapse
  * as before.
  *
+ * Re-importing a file the user already imported is not a no-op and must not be
+ * treated as one. The rows are the same transactions, but the app's reading of
+ * them improves over time — a field the file is the authority on can be
+ * computed better today than it was when those rows were first stored. So a
+ * candidate that matches something already stored is returned as `known`
+ * rather than silently dropped, and the caller refreshes the fields the file
+ * owns while leaving everything the user owns alone.
+ *
+ * Only a repeat WITHIN this batch is a true duplicate to discard.
+ *
  * @param {Array<{sheetIndex?: number}>} candidates rows from one uploaded file
  * @param {Array<{tx_id: string}>} existingTransactions everything already stored
+ * @returns {{fresh: object[], known: object[], batchDuplicates: number}}
  */
-export async function filterNewTransactions(candidates, existingTransactions) {
-  const seenIds = new Set(existingTransactions.map((tx) => tx.tx_id));
+export async function splitCandidatesAgainstStored(candidates, existingTransactions) {
+  const storedIds = new Set(existingTransactions.map((tx) => tx.tx_id));
   // Hashing is an async crypto call, so awaiting one per candidate in a loop
   // serializes the whole batch; they don't depend on each other.
   const hashes = await Promise.all(candidates.map(computeTransactionHash));
 
   const occurrencesInSheet = new Map();
-  const results = [];
+  const seenInBatch = new Set();
+  const fresh = [];
+  const known = [];
+  let batchDuplicates = 0;
+
   candidates.forEach((candidate, i) => {
     const hash = hashes[i];
     const sheetKey = `${candidate.sheetIndex ?? 0}|${hash}`;
@@ -47,11 +62,15 @@ export async function filterNewTransactions(candidates, existingTransactions) {
     occurrencesInSheet.set(sheetKey, occurrence);
 
     // The first occurrence keeps the bare hash, so ids already stored from
-    // earlier imports still match and re-importing a file is still a no-op.
+    // earlier imports still match and a re-import lines up with them.
     const txId = occurrence === 1 ? hash : `${hash}#${occurrence}`;
-    if (seenIds.has(txId)) return;
-    seenIds.add(txId);
-    results.push({ ...candidate, tx_id: txId });
+    if (seenInBatch.has(txId)) {
+      batchDuplicates++;
+      return;
+    }
+    seenInBatch.add(txId);
+    (storedIds.has(txId) ? known : fresh).push({ ...candidate, tx_id: txId });
   });
-  return results;
+
+  return { fresh, known, batchDuplicates };
 }
