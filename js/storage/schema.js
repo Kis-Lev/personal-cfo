@@ -13,6 +13,9 @@ export function emptyDatabase() {
     financial_instruments: {
       deposits: [],
       loans: [],
+      // A share portfolio: what was put in, and what it was last seen to be
+      // worth. Never a rate — see engine/investments.js.
+      investments: [],
     },
     fixed_rules: [],
     parsed_transactions: [],
@@ -52,6 +55,7 @@ export function validateAndNormalize(rawData) {
     financial_instruments: {
       deposits: asArray(data.financial_instruments?.deposits),
       loans: asArray(data.financial_instruments?.loans),
+      investments: asArray(data.financial_instruments?.investments),
     },
     fixed_rules: asArray(data.fixed_rules),
     parsed_transactions: asArray(data.parsed_transactions),

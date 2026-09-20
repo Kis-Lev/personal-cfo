@@ -95,6 +95,11 @@ export const TRACK_STATUS = Object.freeze({
   RED: "RED",
 });
 
+// A portfolio valuation older than this is called out as stale. A figure from
+// months ago is not today's capital, and showing it as though it were is the
+// same silent staleness as a loan balance that never amortizes.
+export const INVESTMENT_VALUE_STALE_DAYS = 45;
+
 // Spending analysis (engine/savings-opportunities.js)
 // A period counts as a one-off for a category when it dwarfs that category's
 // other periods AND the excess is worth naming — both are needed, or a month

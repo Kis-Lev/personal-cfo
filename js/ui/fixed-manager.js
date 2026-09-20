@@ -8,6 +8,9 @@ import { yearsBetween } from "../utils/dates.js";
 import { createId } from "../utils/ids.js";
 import { spitzerPayment, compoundInterest } from "../engine/interest.js";
 import { loanStateToday } from "../engine/loans.js";
+import { investmentState } from "../engine/investments.js";
+import { sumFixedRulesMonthly } from "../engine/cashflow.js";
+import { FIXED_RULE_TYPE as RULE_TYPE } from "../config/constants.js";
 import { COMPOUNDING_FREQUENCY, AMORTIZATION_TYPE, FIXED_RULE_TYPE, FIXED_RULE_TYPE_LABELS } from "../config/constants.js";
 
 function renderFixedRulesSection(container, taxonomy) {
@@ -134,6 +137,121 @@ function renderDepositsSection(container) {
   });
 }
 
+function renderInvestmentsSection(container) {
+  const state = getState();
+  const currency = state.user_profile.currency;
+  const monthly = sumFixedRulesMonthly(state.fixed_rules, RULE_TYPE.INVESTMENT);
+  const money = (amount) => formatCurrency(amount, currency);
+
+  const note = `<p style="color:var(--muted)">התיק נספר בהון שלך לפי <strong>השווי שראית לאחרונה</strong> — האפליקציה לא מניחה שום תשואה, כי למניות אין ריבית חוזית. מה שמוצג כרווח הוא ההפרש בין השווי להפקדות, כלומר מה שכבר קרה.${
+    monthly > 0 ? ` לפי הוראות הקבע שלך מופקדים ${money(monthly)} בחודש.` : ""
+  }</p>`;
+
+  renderEditableTable(container, {
+    title: "תיק השקעות",
+    note,
+    columns: [
+      { key: "name", label: "שם" },
+      { key: "contributed", label: "סה\"כ הופקד", format: (v) => money(Number(v) || 0) },
+      {
+        key: "current_value",
+        label: "שווי נוכחי",
+        format: (_v, row) => {
+          const investment = investmentState(row);
+          const age = row.value_as_of ? `נכון ל-${row.value_as_of}` : "ללא תאריך";
+          const staleness = investment.isStale
+            ? `<span class="track-red" title="שווי ישן — עדכני אותו כדי שההון יהיה נכון">⚠ ${age}</span>`
+            : `<span style="color:var(--muted)">${age}</span>`;
+          return `${money(investment.currentValue)} <br>${staleness}`;
+        },
+      },
+      {
+        key: "gain",
+        label: "רווח/הפסד מאז ההפקדות",
+        format: (_v, row) => {
+          const investment = investmentState(row);
+          if (investment.contributed === 0) return "—";
+          const cls = investment.gain >= 0 ? "track-green" : "track-red";
+          return `<span class="${cls}">${money(investment.gain)} (${investment.gainPercent.toFixed(1)}%)</span>`;
+        },
+      },
+      {
+        key: "since",
+        label: "מאז העדכון",
+        // The standing order funds the household's investing, not this row in
+        // particular, so its amount is only shown when there is a single
+        // portfolio for it to have gone into. With several, the only fact about
+        // this row is how old its valuation is.
+        format: (_v, row) => {
+          const investment = investmentState(row);
+          if (investment.monthsSinceValuation === 0) return "—";
+          const onlyPortfolio = state.financial_instruments.investments.length === 1;
+          const contributed =
+            monthly > 0 && onlyPortfolio
+              ? `, הופקדו ${money(investment.monthsSinceValuation * monthly)} שלא נכללים בשווי`
+              : "";
+          return `<span style="color:var(--muted)">${investment.monthsSinceValuation} חודשים${contributed}</span>`;
+        },
+      },
+    ],
+    rows: state.financial_instruments.investments,
+    formFields: [
+      { name: "name", label: "שם התיק" },
+      { name: "contributed", label: "סה\"כ הופקד עד היום", type: "number", step: "0.01" },
+      { name: "current_value", label: "שווי נוכחי", type: "number", step: "0.01" },
+      { name: "value_as_of", label: "השווי נכון לתאריך", type: "date" },
+    ],
+    rowActions: [
+      {
+        label: "עדכני שווי",
+        onClick: (row, index) => {
+          const entered = prompt(`שווי נוכחי של "${row.name}" (${money(investmentState(row).currentValue)} נכון ל-${row.value_as_of || "ללא תאריך"}):`);
+          if (entered === null) return;
+          const value = Number(entered);
+          if (!Number.isFinite(value)) return;
+          setState((s) => ({
+            ...s,
+            financial_instruments: {
+              ...s.financial_instruments,
+              investments: s.financial_instruments.investments.map((investment, i) =>
+                i === index ? { ...investment, current_value: value, value_as_of: new Date().toISOString().slice(0, 10) } : investment
+              ),
+            },
+          }));
+          persistState();
+          renderInvestmentsSection(container);
+        },
+      },
+    ],
+    onAdd: (data) => {
+      const newInvestment = {
+        investment_id: createId("inv"),
+        name: data.name,
+        contributed: Number(data.contributed),
+        current_value: Number(data.current_value),
+        value_as_of: data.value_as_of || new Date().toISOString().slice(0, 10),
+      };
+      setState((s) => ({
+        ...s,
+        financial_instruments: { ...s.financial_instruments, investments: [...s.financial_instruments.investments, newInvestment] },
+      }));
+      persistState();
+      renderInvestmentsSection(container);
+    },
+    onDelete: (index) => {
+      setState((s) => ({
+        ...s,
+        financial_instruments: {
+          ...s.financial_instruments,
+          investments: s.financial_instruments.investments.filter((_, i) => i !== index),
+        },
+      }));
+      persistState();
+      renderInvestmentsSection(container);
+    },
+  });
+}
+
 function renderLoansSection(container) {
   const state = getState();
   const note = `<p style="color:var(--muted)">ההחזר החודשי נלקח מכאן אוטומטית לתמונת התזרים בדשבורד — הריבית כהוצאה והקרן כפירעון שמגדיל הון. אם יש לך גם הוצאה קבועה ידנית על אותה הלוואה, מחקי אותה כדי לא לספור פעמיים.</p>`;
@@ -223,9 +341,11 @@ export async function renderFixedManager(container) {
   container.innerHTML = `
     <div class="card" id="fixed-rules-section"></div>
     <div class="card" id="deposits-section"></div>
+    <div class="card" id="investments-section"></div>
     <div class="card" id="loans-section"></div>
   `;
   renderFixedRulesSection(container.querySelector("#fixed-rules-section"), taxonomy);
   renderDepositsSection(container.querySelector("#deposits-section"));
+  renderInvestmentsSection(container.querySelector("#investments-section"));
   renderLoansSection(container.querySelector("#loans-section"));
 }

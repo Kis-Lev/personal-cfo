@@ -1,11 +1,22 @@
 import { getState } from "../state/store.js";
-import { currentNetCapital, monthsRemaining, computeNetMonthlySavings, categorySpendingSummary, filesByMonth, unreadRowsByFile } from "../engine/cashflow.js";
+import {
+  currentNetCapital,
+  netCapitalBreakdown,
+  monthsRemaining,
+  computeNetMonthlySavings,
+  categorySpendingSummary,
+  filesByMonth,
+  unreadRowsByFile,
+  sumFixedRulesMonthly,
+} from "../engine/cashflow.js";
+import { investmentTotals } from "../engine/investments.js";
 import { buildFeasibilitySuggestions } from "./components/feasibility-suggestions.js";
 import { formatCurrency } from "../utils/currency.js";
 import { renderChart, renderLegend } from "./charts.js";
 import { escapeHtml } from "../utils/escape-html.js";
 import { loadBankPresets } from "../import/bank-presets.js";
 import { expenseCycleLabel, currentExpenseCycleKey } from "../engine/periods.js";
+import { FIXED_RULE_TYPE } from "../config/constants.js";
 import {
   renderVariableBreakdownCard,
   renderSavingsOpportunitiesCard,
@@ -158,6 +169,39 @@ function wireFilesByMonthSection(container) {
   });
 }
 
+// The progress bar is one number; this says what it is made of. A portfolio
+// valued months ago is called out here too, because a stale valuation is a
+// stale progress bar.
+function capitalCompositionHtml(capital, portfolio, currency) {
+  const money = (amount) => formatCurrency(amount, currency);
+
+  if (capital.isManualOverride) {
+    return `<p style="color:var(--muted)">ההון נקבע לפי עדכון ידני${capital.manualAsOf ? ` מ-${escapeHtml(capital.manualAsOf)}` : ""}, ולכן אינו מחושב מהפיקדונות, התיק וההלוואות.</p>`;
+  }
+
+  const parts = [
+    capital.deposits > 0 ? `פיקדונות ${money(capital.deposits)}` : null,
+    capital.investments > 0 ? `תיק השקעות ${money(capital.investments)}` : null,
+    capital.loans > 0 ? `בניכוי הלוואות ${money(capital.loans)}` : null,
+  ].filter(Boolean);
+
+  if (parts.length === 0) return "";
+
+  const portfolioNotes = [
+    portfolio.gain !== 0 && portfolio.contributed > 0
+      ? `מתוך התיק, ${money(portfolio.gain)} הם רווח מעבר ל-${money(portfolio.contributed)} שהופקדו`
+      : null,
+    portfolio.staleCount > 0 ? `⚠ שווי התיק לא עודכן לאחרונה — ההון כאן עשוי להיות לא מדויק` : null,
+    portfolio.contributedSinceValuation > 0
+      ? `מאז העדכון האחרון הופקדו עוד ${money(portfolio.contributedSinceValuation)} שלא נכללים בשווי`
+      : null,
+  ].filter(Boolean);
+
+  return `
+    <p style="color:var(--muted)">מורכב מ: ${parts.join(" · ")}</p>
+    ${portfolioNotes.length > 0 ? `<p style="color:var(--muted)">${portfolioNotes.join(". ")}.</p>` : ""}`;
+}
+
 export async function renderDashboard(container) {
   const state = getState();
   const goal = [...state.goals].sort((a, b) => a.priority - b.priority)[0];
@@ -172,6 +216,11 @@ export async function renderDashboard(container) {
   }
 
   const netCapital = currentNetCapital(goal, state.capital_adjustments_log, state.financial_instruments);
+  const capital = netCapitalBreakdown(goal, state.capital_adjustments_log, state.financial_instruments);
+  const portfolio = investmentTotals(
+    state.financial_instruments.investments,
+    sumFixedRulesMonthly(state.fixed_rules, FIXED_RULE_TYPE.INVESTMENT)
+  );
   const progressPct = Math.min(100, (netCapital / goal.target_amount) * 100);
   const remaining = monthsRemaining(goal.target_date);
 
@@ -242,6 +291,7 @@ export async function renderDashboard(container) {
         <div style="width:${progressPct.toFixed(1)}%; background:var(--primary); height:100%;"></div>
       </div>
       <p>${formatCurrency(netCapital, state.user_profile.currency)} מתוך ${formatCurrency(goal.target_amount, state.user_profile.currency)} (${progressPct.toFixed(1)}%)</p>
+      ${capitalCompositionHtml(capital, portfolio, state.user_profile.currency)}
       <p>תאריך יעד: ${goal.target_date} · נותרו ${remaining} חודשים</p>
       ${suggestionsHtml}
     </div>

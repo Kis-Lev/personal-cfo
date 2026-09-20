@@ -4,6 +4,7 @@
 import { weightedMovingAverage } from "./forecasting.js";
 import { periodKeyFor } from "./periods.js";
 import { loanCashflowTotals, loanStateToday } from "./loans.js";
+import { investmentTotals } from "./investments.js";
 import { FIXED_TREATMENT_CATEGORIES, FIXED_RULE_TYPE } from "../config/constants.js";
 
 const fixedTreatmentCategories = new Set(FIXED_TREATMENT_CATEGORIES);
@@ -13,13 +14,13 @@ function isFixedTreatment(transaction) {
 }
 
 /**
- * Whether deposits/loans (tracked separately in the fixed-manager screen)
- * count toward a goal's starting capital is the user's explicit per-goal
- * choice (goal.include_financial_instruments) — never assumed. When she
- * opts in, the baseline is every deposit's principal minus every loan's
- * remaining principal; otherwise the baseline is 0. The manual capital-
- * adjustment log always layers on top of that baseline, for a documented,
- * explained correction (e.g. cash the tracked instruments don't see).
+ * Whether the tracked instruments (deposits, share portfolios, loans) count
+ * toward a goal's starting capital is the user's explicit per-goal choice
+ * (goal.include_financial_instruments) — never assumed. When she opts in, the
+ * baseline is every deposit's principal plus every portfolio's last known value
+ * minus every loan's remaining principal; otherwise the baseline is 0. The
+ * manual capital-adjustment log always layers on top of that baseline, for a
+ * documented, explained correction (e.g. cash the tracked instruments can't see).
  */
 // `today` is a parameter rather than a call to new Date() inside, so the
 // amortized figure can be asserted against a fixed point in time.
@@ -32,10 +33,42 @@ export function currentNetCapital(goal, capitalLog, financialInstruments, today 
     // literally freezes the debt forever and keeps net capital understated by
     // everything repaid since.
     const loansTotal = financialInstruments.loans.reduce((sum, l) => sum + loanStateToday(l, today).remainingPrincipal, 0);
-    baseline = depositsTotal - loansTotal;
+    // Last known value, never a projected one: a share portfolio has no rate to
+    // compound, so the only honest figure is the one the user last saw.
+    const investmentsTotal = investmentTotals(financialInstruments.investments, 0, today).value;
+    baseline = depositsTotal + investmentsTotal - loansTotal;
   }
   if (capitalLog.length === 0) return baseline;
   return capitalLog[capitalLog.length - 1].new_balance;
+}
+
+/**
+ * The same number as currentNetCapital, with the parts it is made of — so the
+ * progress bar is never a figure with nothing behind it.
+ * @returns {{total, deposits, investments, loans, isManualOverride, manualAsOf}}
+ */
+export function netCapitalBreakdown(goal, capitalLog, financialInstruments, today = new Date()) {
+  const deposits = goal.include_financial_instruments
+    ? financialInstruments.deposits.reduce((sum, d) => sum + d.principal, 0)
+    : 0;
+  const investments = goal.include_financial_instruments
+    ? investmentTotals(financialInstruments.investments, 0, today).value
+    : 0;
+  const loans = goal.include_financial_instruments
+    ? financialInstruments.loans.reduce((sum, l) => sum + loanStateToday(l, today).remainingPrincipal, 0)
+    : 0;
+
+  const lastAdjustment = capitalLog.length > 0 ? capitalLog[capitalLog.length - 1] : null;
+  return {
+    total: currentNetCapital(goal, capitalLog, financialInstruments, today),
+    deposits,
+    investments,
+    loans,
+    // A manual capital entry overrides the instruments entirely, so the parts
+    // below it no longer explain the total — the reader has to be told that.
+    isManualOverride: Boolean(lastAdjustment),
+    manualAsOf: lastAdjustment?.date ?? null,
+  };
 }
 
 export function monthsRemaining(targetDateIso) {
