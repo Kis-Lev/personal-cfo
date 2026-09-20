@@ -55,6 +55,12 @@ function allPresets() {
 // format, how many rows each tab yielded, and — the part that used to be
 // invisible — which rows could not be read at all.
 // `resolve(rows, sheetIndex)` returns {preset, headerRowIndex} or null.
+// A skipped row is only an alarm when it might have been a transaction.
+// "not_a_transaction" (a header, a legal-terms paragraph) and "statement_total"
+// (the file's own summary line, recognized by matching the sum) are both rows
+// we are right to leave out.
+const isUnreadRow = (row) => row.kind === "unread";
+
 function normalizeSheets(sheets, resolve) {
   const candidates = [];
   const skipped = [];
@@ -81,24 +87,41 @@ function normalizeSheets(sheets, resolve) {
     skipped.push(...sheet.skipped.map((row) => ({ ...row, sheetIndex: i })));
     dataRowCount += sheet.dataRowCount;
     detectedNames.add(resolved.preset.display_name);
+    const unreadInSheet = sheet.skipped.filter(isUnreadRow).length;
     perSheetBreakdown.push(
-      `טאב ${i + 1}: ${resolved.preset.display_name} (${sheet.candidates.length} שורות${
-        sheet.skipped.length > 0 ? `, ${sheet.skipped.length} לא נקראו` : ""
-      })`
+      `טאב ${i + 1}: ${resolved.preset.display_name} (${sheet.candidates.length} שורות${unreadInSheet > 0 ? `, ${unreadInSheet} לא נקראו` : ""})`
     );
   });
 
   return { candidates, skipped, unreadableSheets, dataRowCount, perSheetBreakdown, detectedNames };
 }
 
+// The strongest check the app can show: the issuer's own stated total for the
+// file, next to the total the app read from it. Silence would waste a figure
+// the file is already carrying.
+function statementTotalHtml(statementTotal) {
+  if (!statementTotal) return "";
+  return ` <span class="track-green">סיכום הקובץ עצמו (${formatCurrency(statementTotal.stated)}) תואם למה שנקרא ✓</span>`;
+}
+
+function skipLabel(row) {
+  if (row.kind === "statement_total") return `<span class="track-green">שורת הסיכום של הקובץ ✓</span> — `;
+  if (row.kind === "not_a_transaction") return `<span style="color:var(--muted)">שורה שאינה תנועה</span> — `;
+  return "";
+}
+
 function skippedRowsHtml(skipped) {
   if (skipped.length === 0) return "";
+  const unread = skipped.filter(isUnreadRow);
   return `
-    <details class="track-red" style="margin-top:8px;">
-      <summary>${skipped.length} שורות בקובץ לא נקראו ולא נכנסו לאף חישוב — לחצי לפירוט</summary>
+    <details class="${unread.length > 0 ? "track-red" : ""}" style="margin-top:8px;">
+      <summary>${unread.length} שורות שלא נקראו ולא נכנסו לאף חישוב, ו-${skipped.length - unread.length} שורות שאינן תנועות (כותרות/סיכומים) — לחצי לפירוט</summary>
       <ul>
         ${skipped
-          .map((row) => `<li>שורה ${row.rowNumber}: ${escapeHtml(row.reason)} — <span style="color:var(--muted)">${escapeHtml(row.preview)}</span></li>`)
+          .map(
+            (row) =>
+              `<li>${skipLabel(row)}שורה ${row.rowNumber}: ${escapeHtml(row.reason)} — <span style="color:var(--muted)">${escapeHtml(row.preview)}</span></li>`
+          )
           .join("")}
       </ul>
     </details>`;
@@ -180,7 +203,9 @@ async function finishImport(parsed, file, container, detectedLabel) {
   container.querySelector("#import-summary").innerHTML =
     `${escapeHtml(detectionNote)}${parsed.dataRowCount} שורות נתונים בקובץ = ` +
     `${autoCategorizedCount} סווגו אוטומטית + ${pendingCount} ממתינות לסיווג (ונספרות כבר עכשיו) + ` +
-    `${duplicateCount} כפילויות נחסמו + ${parsed.skipped.length} לא נקראו.` +
+    `${duplicateCount} כפילויות נחסמו + ${parsed.skipped.filter(isUnreadRow).length} לא נקראו + ` +
+    `${parsed.skipped.filter((row) => !isUnreadRow(row)).length} שורות שאינן תנועות (כותרות/סיכומים).` +
+    statementTotalHtml(parsed.statementTotal) +
     (unreadableRows > 0
       ? ` <span class="track-red">בנוסף, ${unreadableRows} שורות ב-${parsed.unreadableSheets.length} טאבים שלא זוהה בהם פורמט לא נקראו כלל.</span>`
       : "") +

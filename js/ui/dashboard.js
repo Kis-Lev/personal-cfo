@@ -5,14 +5,17 @@ import { formatCurrency } from "../utils/currency.js";
 import { renderChart, renderLegend } from "./charts.js";
 import { escapeHtml } from "../utils/escape-html.js";
 import { loadBankPresets } from "../import/bank-presets.js";
+import { expenseCycleLabel, currentExpenseCycleKey } from "../engine/periods.js";
 
-// Persists across re-renders of this screen (e.g. after picking a month),
+// Persists across re-renders of this screen (e.g. after picking a cycle),
 // same pattern as the filter/sort state kept at module scope in transactions.js.
 let selectedFilesMonth = null;
 
-function monthLabel(monthKey) {
-  const [year, month] = monthKey.split("-");
-  return `${month}/${year}`;
+// Always spells out the days a cycle covers. "08/2026" alone reads as calendar
+// August, and a cycle is exactly what a calendar month is not — the reader has
+// to be able to see that this table's August ends on the 9th of September.
+function monthLabel(cycleKey) {
+  return expenseCycleLabel(cycleKey);
 }
 
 async function renderFilesByMonthSection(state) {
@@ -21,10 +24,10 @@ async function renderFilesByMonthSection(state) {
   const money = (amount) => formatCurrency(amount, currency);
 
   if (months.length === 0) {
-    return `<div class="card"><h3>קבצים שהועלו לפי חודש</h3><p>עדיין אין תנועות מיובאות.</p></div>`;
+    return `<div class="card"><h3>קבצים שהועלו לפי מחזור חיוב</h3><p>עדיין אין תנועות מיובאות.</p></div>`;
   }
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = currentExpenseCycleKey();
   if (!selectedFilesMonth || !months.includes(selectedFilesMonth)) {
     selectedFilesMonth = months.includes(currentMonth) ? currentMonth : months[months.length - 1];
   }
@@ -46,7 +49,9 @@ async function renderFilesByMonthSection(state) {
           .map(
             (r) => `<tr>
               <td>${escapeHtml(r.sourceFile)}${
-                unread.has(r.sourceFile) ? ` <span class="track-red" title="${escapeHtml(unread.get(r.sourceFile).reasons.join(" · "))}">⚠ ${unread.get(r.sourceFile).unreadRows} שורות לא נקראו</span>` : ""
+                unread.get(r.sourceFile)?.unreadRows > 0
+                  ? ` <span class="track-red" title="${escapeHtml(unread.get(r.sourceFile).reasons.join(" · "))}">⚠ ${unread.get(r.sourceFile).unreadRows} שורות לא נקראו</span>`
+                  : ""
               }</td>
               <td>${escapeHtml(sourceLabel(r.source))}</td>
               <td>${r.count}</td>
@@ -59,7 +64,7 @@ async function renderFilesByMonthSection(state) {
 
   const missingHtml =
     missingSources.length > 0
-      ? `<p class="track-red">⚠ לא נמצא החודש קובץ עבור: ${missingSources.map((s) => escapeHtml(sourceLabel(s))).join(", ")} — מקורות שהועלו בחודשים אחרים בעבר.</p>`
+      ? `<p class="track-red">⚠ לא נמצא במחזור הזה קובץ עבור: ${missingSources.map((s) => escapeHtml(sourceLabel(s))).join(", ")} — מקורות שהופיעו במחזורים אחרים בעבר.</p>`
       : "";
 
   // A card's billing cycle closes mid-month, so part of a file's transactions
@@ -69,20 +74,20 @@ async function renderFilesByMonthSection(state) {
   const straddlingHtml =
     straddling.length === 0
       ? ""
-      : `<p style="color:var(--muted)">הקבצים הבאים פרוסים על יותר מחודש אחד (מועד חיוב שנסגר באמצע החודש), ולכן מוצג כאן רק החלק ששייך ל-${monthLabel(selectedFilesMonth)}:</p>
+      : `<p style="color:var(--muted)">הקבצים הבאים פרוסים על יותר ממחזור אחד, ולכן מוצג כאן רק החלק ששייך למחזור ${monthLabel(selectedFilesMonth)}:</p>
          <ul style="color:var(--muted)">${straddling
            .map(
              (r) =>
-               `<li>${escapeHtml(r.sourceFile)}: בקובץ כולו ${money(r.fileTotal)} ב-${r.fileCount} תנועות — מתוכן ${money(r.total)} בחודש זה ו-${money(r.fileTotal - r.total)} בחודשים אחרים.</li>`
+               `<li>${escapeHtml(r.sourceFile)}: בקובץ כולו ${money(r.fileTotal)} ב-${r.fileCount} תנועות — מתוכן ${money(r.total)} במחזור זה ו-${money(r.fileTotal - r.total)} במחזורים אחרים.</li>`
            )
            .join("")}</ul>`;
 
   const pendingHtml =
     totals.pendingCount === 0
       ? ""
-      : `<p style="color:var(--muted)">${totals.pendingCount} מהתנועות החודש (${money(totals.pendingTotal)}) עדיין ממתינות לסיווג ידני — הן כבר כלולות בסכומים כאן ובדשבורד, תחת "ממתין לסיווג ידני".</p>`;
+      : `<p style="color:var(--muted)">${totals.pendingCount} מהתנועות במחזור הזה (${money(totals.pendingTotal)}) עדיין ממתינות לסיווג ידני — הן כבר כלולות בסכומים כאן ובדשבורד, תחת "ממתין לסיווג ידני".</p>`;
 
-  const unreadHtml = [...unread.entries()].filter(([fileName]) => rows.some((r) => r.sourceFile === fileName));
+  const unreadHtml = [...unread.entries()].filter(([fileName, info]) => info.unreadRows > 0 && rows.some((r) => r.sourceFile === fileName));
   const unreadSectionHtml =
     unreadHtml.length === 0
       ? ""
@@ -95,8 +100,9 @@ async function renderFilesByMonthSection(state) {
 
   return `
     <div class="card">
-      <h3>קבצים שהועלו לפי חודש</h3>
-      <label>בחרי חודש:
+      <h3>קבצים שהועלו לפי מחזור חיוב</h3>
+      <p style="color:var(--muted)">מחזור חיוב נמשך מה-10 לחודש עד ה-10 בחודש שאחריו, ונקרא על שם החודש שבו הוא מתחיל — כך שחיוב מה-3 בספטמבר שייך למחזור אוגוסט.</p>
+      <label>בחרי מחזור:
         <select id="files-month-select">
           ${months
             .slice()
@@ -114,7 +120,7 @@ async function renderFilesByMonthSection(state) {
         ${
           rows.length > 0
             ? `<tfoot><tr>
-                <td colspan="2"><strong>סה"כ ${monthLabel(selectedFilesMonth)}</strong></td>
+                <td colspan="2"><strong>סה"כ מחזור ${monthLabel(selectedFilesMonth)}</strong></td>
                 <td><strong>${totals.count}</strong></td>
                 <td><strong>${money(totals.charges)}</strong></td>
                 <td><strong>${totals.credits === 0 ? "—" : money(totals.credits)}</strong></td>
@@ -188,7 +194,7 @@ export async function renderDashboard(container) {
       ? "<p>עדיין אין מספיק נתונים (לא קבועות ולא תנועות מיובאות) לפילוח לפי קטגוריה.</p>"
       : `<table>
           <thead>
-            <tr><th>קטגוריה</th><th>קבוע חודשי</th><th>ממוצע מתנועות</th><th>סה"כ ממוצע חודשי</th><th>חודשים עם נתונים</th></tr>
+            <tr><th>קטגוריה</th><th>קבוע חודשי</th><th>ממוצע מתנועות</th><th>סה"כ ממוצע חודשי</th><th>מחזורים עם נתונים</th></tr>
           </thead>
           <tbody>
             ${categoryRows
@@ -232,7 +238,7 @@ export async function renderDashboard(container) {
     <div class="card">
       <h3>ממוצע הוצאה חודשית לפי קטגוריה</h3>
       <p>ממוצע הוצאה חודשית כוללת (כל הקטגוריות): <strong>${formatCurrency(overallMonthlyAverage, currency)}</strong>
-        <span style="color:var(--muted)">— סכום כל השורות בטבלה, כולן מחולקות באותם ${monthsCovered} חודשי נתונים.</span></p>
+        <span style="color:var(--muted)">— סכום כל השורות בטבלה, כולן מחולקות באותם ${monthsCovered} מחזורי חיוב.</span></p>
       ${categoryTableHtml}
     </div>
     <div id="files-by-month">${await renderFilesByMonthSection(state)}</div>

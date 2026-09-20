@@ -2,6 +2,7 @@
 // simulator.js so the two screens can never drift into two different answers
 // for "what is the user's current net capital / net monthly savings".
 import { weightedMovingAverage } from "./forecasting.js";
+import { periodKeyFor } from "./periods.js";
 import { FIXED_TREATMENT_CATEGORIES } from "../config/constants.js";
 
 const fixedTreatmentCategories = new Set(FIXED_TREATMENT_CATEGORIES);
@@ -57,15 +58,19 @@ export function effectiveAmount(transaction) {
   return transaction.amount * (1 - reimbursed / 100);
 }
 
+// One month of spending is one billing cycle (the 10th to the 10th), not one
+// calendar month — periodKeyFor owns that decision, and every series, average
+// and forecast in this file is built from this one function, so none of them
+// can end up bucketing by a different definition of "month" than the others.
 function monthlyExpenseSeries(transactions) {
-  const byMonth = new Map();
+  const byPeriod = new Map();
   for (const tx of transactions) {
-    const monthKey = tx.date.slice(0, 7);
-    byMonth.set(monthKey, (byMonth.get(monthKey) || 0) + effectiveAmount(tx));
+    const periodKey = periodKeyFor(tx);
+    byPeriod.set(periodKey, (byPeriod.get(periodKey) || 0) + effectiveAmount(tx));
   }
-  return Array.from(byMonth.keys())
+  return Array.from(byPeriod.keys())
     .sort()
-    .map((key) => byMonth.get(key));
+    .map((key) => byPeriod.get(key));
 }
 
 export function monthlyVariableExpenseSeries(transactions) {
@@ -124,7 +129,7 @@ export function categorySpendingSummary(state) {
   }
 
   const categories = new Set([...fixedByCategory.keys(), ...transactionsByCategory.keys()]);
-  const monthsCovered = new Set(state.parsed_transactions.map((tx) => tx.date.slice(0, 7))).size;
+  const monthsCovered = new Set(state.parsed_transactions.map(periodKeyFor)).size;
 
   const rows = [...categories]
     .map((category) => {
@@ -147,16 +152,15 @@ export function categorySpendingSummary(state) {
 }
 
 /**
- * Groups imported transactions by (transaction month, source file) so the
- * dashboard can show, for any month, exactly which files contributed to it and
- * how much each one did. A file's transactions can straddle a month boundary
- * (a card's billing cycle closes mid-month), so a file appears once per month
- * it actually has transactions in.
+ * Groups imported transactions by (billing cycle, source file) so the dashboard
+ * can show, for any cycle, exactly which files contributed to it and how much
+ * each one did. A file's transactions can straddle a cycle boundary, so a file
+ * appears once per cycle it actually has transactions in.
  *
  * That split is also why every row carries its file's FULL total alongside the
- * part of it that falls inside the selected month: a month's sum on its own
+ * part of it that falls inside the selected cycle: a cycle's sum on its own
  * looks wrong next to the statement it came from, and the missing money is not
- * missing at all — it is sitting in the neighbouring month. Charges and credits
+ * missing at all — it is sitting in the neighbouring cycle. Charges and credits
  * are kept apart for the same reason: a refund is a negative amount, so a
  * single netted figure under a column headed "total spent" silently understates
  * what actually went out.
@@ -178,7 +182,7 @@ export function filesByMonth(transactions) {
   const sourceMonths = new Map(); // source -> Set of months it has ever appeared in
 
   for (const tx of transactions) {
-    const month = tx.date.slice(0, 7);
+    const month = periodKeyFor(tx);
     const sourceFile = tx.source_file || "—";
     // JSON-encoded rather than concatenated with a separator character: a file
     // name can contain any character, so no literal separator is safe from
@@ -237,7 +241,12 @@ export function filesByMonth(transactions) {
  * Per uploaded file: how many of its rows never became a transaction, from the
  * import log written at upload time. The dashboard puts this next to the file's
  * total so a partially-read file can't pass for a complete one.
- * @returns {Map<string, {unreadRows: number, reasons: string[]}>} keyed by file name
+ *
+ * Only rows that might have been transactions raise the warning. A statement's
+ * own "סך הכל" line and legal-terms paragraph are skipped rows too, and they are
+ * still listed — but counting them as unread money would put a red flag on every
+ * correctly-read file there is.
+ * @returns {Map<string, {unreadRows: number, reasons: string[], nonTransactionRows: number}>} keyed by file name
  */
 export function unreadRowsByFile(importLog = []) {
   const byFile = new Map();
@@ -245,11 +254,21 @@ export function unreadRowsByFile(importLog = []) {
     const skipped = record.skipped || [];
     const unreadableRows = (record.unreadable_sheets || []).reduce((sum, sheet) => sum + sheet.rowCount, 0);
     if (skipped.length === 0 && unreadableRows === 0) continue;
-    if (!byFile.has(record.file_name)) byFile.set(record.file_name, { unreadRows: 0, reasons: [] });
+    if (!byFile.has(record.file_name)) byFile.set(record.file_name, { unreadRows: 0, reasons: [], nonTransactionRows: 0 });
     const entry = byFile.get(record.file_name);
-    entry.unreadRows += skipped.length + unreadableRows;
-    for (const row of skipped) entry.reasons.push(`שורה ${row.rowNumber}: ${row.reason}`);
-    if (unreadableRows > 0) entry.reasons.push(`${unreadableRows} שורות בטאבים שלא זוהה בהם פורמט`);
+
+    for (const row of skipped) {
+      if (row.kind === "not_a_transaction" || row.kind === "statement_total") {
+        entry.nonTransactionRows += 1;
+        continue;
+      }
+      entry.unreadRows += 1;
+      entry.reasons.push(`שורה ${row.rowNumber}: ${row.reason}`);
+    }
+    if (unreadableRows > 0) {
+      entry.unreadRows += unreadableRows;
+      entry.reasons.push(`${unreadableRows} שורות בטאבים שלא זוהה בהם פורמט`);
+    }
   }
   return byFile;
 }

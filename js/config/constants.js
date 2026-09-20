@@ -20,6 +20,19 @@ export const SILENT_LOGIN_TIMEOUT_MS = 4000;
 // silent re-auth is worth attempting at all.
 export const PRIOR_CONSENT_STORAGE_KEY = "cfo_app_prior_google_consent";
 
+// Monthly periods (see engine/periods.js)
+// Spending is grouped by the credit-card billing cycle rather than the calendar
+// month: a cycle runs from this day of one month to the same day of the next,
+// and the day itself opens the new cycle. Income keeps the calendar month.
+export const EXPENSE_CYCLE_START_DAY = 10;
+
+// A bare number in a date column is an Excel date serial, but it is also what a
+// row counter or a total line looks like. Serials outside this range are not
+// dates in any statement — accepting them turned a trailing "60" into
+// 1900-02-28 and would file a real charge under a nonsense month.
+export const MIN_PLAUSIBLE_DATE_ISO = "2000-01-01";
+export const MAX_PLAUSIBLE_DATE_ISO = "2100-01-01";
+
 // Categorization
 export const PENDING_CATEGORY_LABEL = "ממתין לסיווג ידני";
 

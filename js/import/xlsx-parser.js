@@ -74,10 +74,21 @@ async function readEntryAsText(view, bytes, entries, path) {
   return new TextDecoder("utf-8").decode(data);
 }
 
+// Every element lookup in this file goes through here, ignoring the namespace
+// prefix. Some exporters write the sheet as <row>/<c>/<v>, others write exactly
+// the same document as <x:row>/<x:c>/<x:v> with a prefixed namespace — and on
+// an XML document getElementsByTagName matches the QUALIFIED name, so "row"
+// finds nothing at all in the prefixed flavour. That produced a sheet with zero
+// rows, which the importer could only report as "unrecognized format": a whole
+// statement read as empty, with the money on it in no total anywhere.
+function childrenNamed(element, tagName) {
+  return Array.from(element.getElementsByTagNameNS("*", tagName));
+}
+
 // A single string value is split across several <t> runs whenever parts of it
 // carry different formatting, so the runs are concatenated back into one text.
 function joinTextRuns(element) {
-  return Array.from(element.getElementsByTagName("t"))
+  return childrenNamed(element, "t")
     .map((t) => t.textContent)
     .join("");
 }
@@ -85,7 +96,7 @@ function joinTextRuns(element) {
 function parseSharedStrings(xmlText) {
   if (!xmlText) return [];
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
-  return Array.from(doc.getElementsByTagName("si")).map(joinTextRuns);
+  return childrenNamed(doc, "si").map(joinTextRuns);
 }
 
 function columnLettersToIndex(cellRef) {
@@ -101,9 +112,9 @@ function parseWorksheet(xmlText, sharedStrings) {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   const rows = [];
 
-  for (const rowEl of Array.from(doc.getElementsByTagName("row"))) {
+  for (const rowEl of childrenNamed(doc, "row")) {
     const row = [];
-    for (const cellEl of Array.from(rowEl.getElementsByTagName("c"))) {
+    for (const cellEl of childrenNamed(rowEl, "c")) {
       const ref = cellEl.getAttribute("r");
       const type = cellEl.getAttribute("t");
       // Text can reach a cell two different ways, and a file mixes both freely:
@@ -113,10 +124,10 @@ function parseWorksheet(xmlText, sharedStrings) {
       // tab's header row and makes that tab look like an unrecognized format.
       let value;
       if (type === "inlineStr") {
-        const inlineEl = cellEl.getElementsByTagName("is")[0];
+        const inlineEl = childrenNamed(cellEl, "is")[0];
         value = inlineEl ? joinTextRuns(inlineEl) : "";
       } else {
-        const valueEl = cellEl.getElementsByTagName("v")[0];
+        const valueEl = childrenNamed(cellEl, "v")[0];
         value = valueEl ? valueEl.textContent : "";
         if (type === "s") value = sharedStrings[Number(value)] ?? "";
       }

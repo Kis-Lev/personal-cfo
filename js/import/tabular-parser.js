@@ -70,6 +70,13 @@ export function detectMatchingPreset(rows, presets) {
  *   total in the app, with no trace anywhere that a row had been left out at all.
  *   Reporting it is what lets the import screen and the dashboard say out loud
  *   that a file was only partly read.
+ *
+ *   A skip carries a `kind`, because the two kinds deserve very different
+ *   attention. A row with none of the three fields readable is the statement's
+ *   own furniture — a "סך הכל" line, a legal-terms paragraph — and flagging
+ *   those in red on every import trains the reader to ignore the warning that
+ *   matters. A row where SOME field read but another did not is the one that
+ *   might be a real transaction whose money is now missing.
  */
 export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderRowIndex(rows, preset.columns)) {
   if (headerRowIndex === -1) return { candidates: [], skipped: [], dataRowCount: 0 };
@@ -92,11 +99,22 @@ export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderR
     if (amount == null) problems.push(`סכום לא קריא ("${rawCell("amount")}")`);
 
     if (problems.length > 0) {
+      // What separates a row that might be a lost transaction from the
+      // statement's own furniture is whether anything IDENTIFIES it — a date or
+      // a merchant. An amount on its own does not: every one of these exports
+      // ends with its own total line ("סה\"כ לחיוב החודש בכרטיס בש\"ח | 2776.73"),
+      // which carries a perfectly readable amount and nothing else, and
+      // flagging that as missing money would put a red warning on every
+      // correctly-read file there is.
+      const identified = date != null || merchant !== "";
       skipped.push({
+        kind: identified ? "unread" : "not_a_transaction",
         // +2: one for the header row itself, one for 1-based counting, so the
         // number matches the row gutter the user sees in Excel.
         rowNumber: headerRowIndex + i + 2,
         reason: problems.join(", "),
+        amount,
+        hasDate: date != null,
         preview: row
           .filter((cell) => String(cell).trim() !== "")
           .join(" | ")
@@ -107,5 +125,38 @@ export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderR
     candidates.push({ date, merchant, amount, accountId, source });
   });
 
-  return { candidates, skipped, dataRowCount: dataRows.length };
+  const statementTotal = findStatementTotalRow(skipped, candidates);
+  return { candidates, skipped, dataRowCount: dataRows.length, statementTotal };
+}
+
+// Close enough to equal for money that has been through a rounding or two.
+const RECONCILIATION_TOLERANCE = 0.005;
+
+/**
+ * Finds the statement's own total line among the rows that couldn't be read as
+ * transactions, by arithmetic rather than by wording: a dateless row whose
+ * amount equals the sum of everything read from this sheet IS that sum. Two
+ * things follow from recognizing it. It stops being a false alarm — it is the
+ * statement's summary, not a transaction whose money went missing. And it
+ * becomes a free reconciliation check against the issuer's own figure, which
+ * is a stronger statement about the import than any total the app computes
+ * from its own reading.
+ *
+ * A total that does NOT match is left as a loud mismatch rather than quietly
+ * reclassified: that is the case where rows really are missing.
+ */
+function findStatementTotalRow(skipped, candidates) {
+  if (candidates.length === 0) return null;
+  const readTotal = candidates.reduce((sum, candidate) => sum + candidate.amount, 0);
+
+  for (const row of skipped) {
+    // A transaction always carries a date; a summary line never does. So only a
+    // dateless row with a readable amount can be the total — which is also the
+    // shape that would otherwise be flagged as money we failed to read.
+    if (row.amount == null || row.hasDate) continue;
+    if (Math.abs(row.amount - readTotal) > RECONCILIATION_TOLERANCE) continue;
+    row.kind = "statement_total";
+    return { rowNumber: row.rowNumber, stated: row.amount, read: readTotal, matches: true };
+  }
+  return null;
 }

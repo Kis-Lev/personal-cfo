@@ -1,3 +1,5 @@
+import { MIN_PLAUSIBLE_DATE_ISO, MAX_PLAUSIBLE_DATE_ISO } from "../config/constants.js";
+
 // Single date-normalization function shared by every import path.
 // Accepts the common formats seen in exported bank/credit-card files and
 // always returns an ISO "YYYY-MM-DD" string (or null if unparseable).
@@ -17,14 +19,20 @@ export function normalizeDateToIso(rawValue) {
 
   // Excel stores dates as a plain serial number of days since 1899-12-30
   // (day 0) when the "date" formatting is just a cell style, not real text.
-  // Safe to assume here because normalizeDateToIso is only ever called on a
-  // column the user already identified as the date column.
+  // A bare number in the date column is not always a date, though: statements
+  // end with rows like ["60", "", "", "7393.0"] where the number is a counter
+  // or a total, and read as a serial that becomes 1900-02-28. Only a serial
+  // that lands in a range a statement could plausibly cover is treated as a
+  // date; anything else is left unparseable, so the row is reported instead of
+  // being filed under a nonsense month.
   const excelSerial = value.match(/^\d+(\.\d+)?$/);
   if (excelSerial) {
     const EXCEL_EPOCH_OFFSET_DAYS = 25569; // days between 1899-12-30 and 1970-01-01
     const MS_PER_DAY = 86400 * 1000;
     const date = new Date((parseFloat(value) - EXCEL_EPOCH_OFFSET_DAYS) * MS_PER_DAY);
-    return date.toISOString().slice(0, 10);
+    if (Number.isNaN(date.getTime())) return null;
+    const iso = date.toISOString().slice(0, 10);
+    return iso >= MIN_PLAUSIBLE_DATE_ISO && iso < MAX_PLAUSIBLE_DATE_ISO ? iso : null;
   }
 
   return null;
