@@ -33,6 +33,18 @@ export function expenseCycleKey(isoDate) {
 }
 
 /**
+ * The cycle a bill belongs to, from the day it was charged. A bill CLOSES a
+ * cycle rather than opening one: the statement charged on 10 September is the
+ * bill for everything bought between 10 August and 9 September, which is cycle
+ * August. So the cycle is the one containing the day before the charge.
+ */
+export function cycleOfBillingDate(billingDateIso) {
+  const dayBefore = new Date(`${billingDateIso}T00:00:00Z`);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  return expenseCycleKey(dayBefore.toISOString().slice(0, 10));
+}
+
+/**
  * Income is recognised only where a transaction says so explicitly. Nothing in
  * the import pipeline sets this today — income currently reaches the app as
  * dated-less monthly amounts in fixed_rules, which need no period at all — so
@@ -45,9 +57,25 @@ export function isIncomeTransaction(transaction) {
   return transaction.type === "INCOME";
 }
 
-/** The period key for a transaction, picking the rule that applies to it. */
+/**
+ * The period key for a transaction, picking the rule that applies to it.
+ *
+ * A charge belongs to the cycle it was BILLED in, not the one it was bought in,
+ * and those differ whenever a purchase is paid in instalments: the same
+ * purchase date appears on several consecutive statements, one instalment each.
+ * Grouping by purchase date piled every instalment into the month of the
+ * purchase, so a cycle showed money that had not left the account yet.
+ *
+ * billing_cycle is worked out at import time (see tabular-parser.js), because
+ * it can take the whole file to know it: some statements carry a billing date
+ * per row, while others are a single bill whose date is stated nowhere in the
+ * rows themselves. Transactions imported before this existed have no
+ * billing_cycle, and fall back to the purchase date rather than being wrong in
+ * a new way.
+ */
 export function periodKeyFor(transaction) {
-  return isIncomeTransaction(transaction) ? calendarMonthKey(transaction.date) : expenseCycleKey(transaction.date);
+  if (isIncomeTransaction(transaction)) return calendarMonthKey(transaction.date);
+  return transaction.billing_cycle || expenseCycleKey(transaction.date);
 }
 
 /** First and last day (inclusive, ISO) covered by an expense cycle key. */

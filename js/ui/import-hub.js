@@ -141,6 +141,9 @@ async function finishImport(parsed, file, container, detectedLabel) {
     const transaction = {
       tx_id: candidate.tx_id,
       date: candidate.date,
+      // Which statement actually paid for this — worked out at parse time,
+      // because for a single-bill file it takes the whole file to know.
+      billing_cycle: candidate.billing_cycle,
       merchant: candidate.merchant,
       amount: candidate.amount,
       // Each candidate already carries the id of whichever preset actually

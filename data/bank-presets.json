@@ -3,40 +3,84 @@
     "id": "generic",
     "display_name": "פורמט גנרי (עמודות: תאריך, בית עסק, סכום)",
     "columns": {
-      "date": { "header": "תאריך" },
-      "merchant": { "header": "בית עסק" },
-      "amount": { "header": "סכום" },
-      "account_id": { "header": "מזהה חשבון/כרטיס" }
+      "date": {
+        "header": "תאריך"
+      },
+      "merchant": {
+        "header": "בית עסק"
+      },
+      "amount": {
+        "header": "סכום"
+      },
+      "account_id": {
+        "header": "מזהה חשבון/כרטיס"
+      },
+      "billing_date": {
+        "header": null
+      }
     }
   },
   {
     "id": "credit_card_with_category_column",
     "display_name": "כרטיס אשראי - עם עמודת קטגוריה מובנית (transaction-details export)",
     "columns": {
-      "date": { "header": "תאריך עסקה" },
-      "merchant": { "header": "שם בית העסק" },
-      "amount": { "header": "סכום חיוב" },
-      "account_id": { "header": null }
+      "date": {
+        "header": "תאריך עסקה"
+      },
+      "merchant": {
+        "header": "שם בית העסק"
+      },
+      "amount": {
+        "header": "סכום חיוב"
+      },
+      "account_id": {
+        "header": null
+      },
+      "billing_date": {
+        "header": "תאריך חיוב"
+      }
     }
   },
   {
     "id": "credit_card_billing_date_transactions",
     "display_name": "כרטיס אשראי - עסקאות למועד חיוב (מס' שובר)",
     "columns": {
-      "date": { "header": "תאריך רכישה" },
-      "merchant": { "header": "שם בית עסק" },
-      "amount": { "header": "סכום חיוב" },
-      "account_id": { "header": "מס' שובר" }
+      "date": {
+        "header": "תאריך רכישה"
+      },
+      "merchant": {
+        "header": "שם בית עסק"
+      },
+      "amount": {
+        "header": "סכום חיוב"
+      },
+      "account_id": {
+        "header": "מס' שובר"
+      },
+      "billing_date": {
+        "header": null
+      }
     }
   },
   {
     "id": "credit_card_transactions_and_credits",
     "display_name": "כרטיס אשראי - פירוט עסקאות וזיכויים",
     "columns": {
-      "date": { "header": "תאריך\nעסקה" },
-      "merchant": { "header": "שם בית עסק" },
-      "amount": { "header": "סכום\nבש\"ח" },
-      "account_id": { "header": null }
+      "date": {
+        "header": "תאריך\nעסקה"
+      },
+      "merchant": {
+        "header": "שם בית עסק"
+      },
+      "amount": {
+        "header": "סכום\nבש\"ח"
+      },
+      "account_id": {
+        "header": null
+      },
+      "billing_date": {
+        "header": "מועד\nחיוב"
+      }
     }
   }
 ]

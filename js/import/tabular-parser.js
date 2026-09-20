@@ -4,6 +4,7 @@
 // so CSV and XLSX never duplicate this logic between them.
 import { normalizeDateToIso } from "../utils/dates.js";
 import { parseAmount } from "../utils/currency.js";
+import { expenseCycleKey, cycleOfBillingDate } from "../engine/periods.js";
 
 const REQUIRED_COLUMN_KEYS = ["date", "merchant", "amount"];
 
@@ -92,6 +93,10 @@ export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderR
     const merchant = columnIndex.merchant != null ? rawCell("merchant") : "";
     const amount = columnIndex.amount != null ? parseAmount(row[columnIndex.amount]) : null;
     const accountId = columnIndex.account_id != null ? rawCell("account_id") || null : null;
+    // The day the charge was actually billed, where the issuer states it per
+    // row. Never required: a missing or unreadable billing date only means the
+    // cycle has to be worked out for the file as a whole below.
+    const billingDate = columnIndex.billing_date != null ? normalizeDateToIso(row[columnIndex.billing_date]) : null;
 
     const problems = [];
     if (!date) problems.push(`תאריך לא קריא ("${rawCell("date")}")`);
@@ -122,11 +127,38 @@ export function normalizeRows(rows, preset, source, headerRowIndex = findHeaderR
       });
       return;
     }
-    candidates.push({ date, merchant, amount, accountId, source });
+    candidates.push({ date, merchant, amount, accountId, source, billingDate });
   });
 
+  assignBillingCycles(candidates);
   const statementTotal = findStatementTotalRow(skipped, candidates);
   return { candidates, skipped, dataRowCount: dataRows.length, statementTotal };
+}
+
+/**
+ * Stamps every candidate with the cycle it was billed in.
+ *
+ * Where the issuer states a billing date per row, that is used directly, and
+ * one file can legitimately span several cycles — a "transactions and credits"
+ * export covers months of bills at once.
+ *
+ * Where it does not, the file IS one statement: every row on it was paid on the
+ * same day, whatever each row's purchase date says. The statement's own date
+ * appears nowhere in its rows, so the cycle is taken from the newest purchase
+ * in the file — a bill covers purchases up to its cut-off, so the newest one
+ * always falls in the cycle the bill closes. This is what stops the instalments
+ * of one purchase, which all carry its original purchase date, from piling into
+ * the month it was bought in instead of the months they were each paid in.
+ */
+function assignBillingCycles(candidates) {
+  if (candidates.length === 0) return;
+  const latestPurchase = candidates.reduce((latest, c) => (c.date > latest ? c.date : latest), candidates[0].date);
+  const statementCycle = expenseCycleKey(latestPurchase);
+
+  for (const candidate of candidates) {
+    candidate.billing_cycle = candidate.billingDate ? cycleOfBillingDate(candidate.billingDate) : statementCycle;
+    delete candidate.billingDate;
+  }
 }
 
 // Close enough to equal for money that has been through a rounding or two.
